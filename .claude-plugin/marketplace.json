@@ -1,14 +1,14 @@
 {
-  "name": "repo-documenter",
-  "description": "Repository documentation plugin: developer and app-user guides with Mermaid diagrams.",
+  "name": "app-docs",
+  "description": "Private marketplace for the app-docs documentation plugin.",
   "owner": {
-    "name": "pentaly"
+    "name": "pentaly7"
   },
   "plugins": [
     {
-      "name": "repo-documenter",
+      "name": "app-docs",
       "source": "./",
-      "description": "Document a repository as a developer guide and an app-user guide, with Mermaid diagrams, reviewed by fresh-context agents."
+      "description": "Generate, update and sync developer docs (English) and operator guides (Bahasa Indonesia) for every app in a repo."
     }
   ]
 }

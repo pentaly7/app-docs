@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: legacy-app
+expected_outcome: |
+  For the legacy app, everything from small-new-app holds, plus: README or comment claims that
+  disagree with the code are marked as Contradiction in the dev guide; hardcoded secrets are
+  reported as Security findings with the value redacted; unclear behavior carries an Unverified
+  mark with the original author from git history; production facts not in the repo use the
+  "fill in manually" placeholder; and a large app (>50 endpoints or >10 pages) is split into
+  one file per section.
+context:
+  scaffold_script: place-files.sh

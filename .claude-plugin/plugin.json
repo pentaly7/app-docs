@@ -1,10 +1,6 @@
 {
-  "name": "repo-documenter",
-  "version": "1.0.0",
-  "description": "Document a repository as two Markdown guides with Mermaid diagrams: one for developers and one for the people who use the app. An Elephant agent drafts with full context; fresh-context Goldfish reviewers check the guides against the code.",
-  "author": {
-    "name": "pentaly"
-  },
-  "license": "MIT",
-  "keywords": ["documentation", "mermaid", "onboarding", "architecture", "user-guide", "elephant-goldfish"]
+  "name": "app-docs",
+  "version": "2.0.0",
+  "description": "Generate, update and sync developer docs (English) and operator guides (Bahasa Indonesia) for every app in a repo, reviewed by fresh-context goldfish agents and synced to Docmost.",
+  "author": { "name": "pentaly7" }
 }
