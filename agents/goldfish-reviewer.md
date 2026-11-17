@@ -28,8 +28,9 @@ Work section by section within the scope. Use each section's `files` from the ap
 
 **Audience fit**
 - Dev guide: could a new developer find where to change behavior X using only this doc? Is it concise, with no filler and no restating?
-- Operator guide: could an operator who never reads code go from a symptom ("payments stuck in PENDING") to what to check? Is it Bahasa Indonesia with "Anda", no slang, no stiff officialese, tech terms in English? Is "Jika gagal" actionable, never just "hubungi developer"?
-- Are diagrams readable (size limits in `diagrams.md`) and do they match the steps?
+- Operator guide: could an operator who never reads code go from a symptom ("payments stuck in PENDING") to what to check? Does every error branch in the flowchart have a matching "Kalau gagal" entry? Is "Kalau gagal" actionable, never just "hubungi developer"? (Tone isn't your job here. The humanizer runs after you.)
+- Read `<Shared>/references/diagrams.md`. For each important flow, compare the **flowchart against the code**: list the branches the code can take (error exits, retries, timeouts, flags, fallbacks) and check each one is drawn, labelled with its condition, and ends at a terminal. A missing branch is a `high` accuracy finding. Check the sequence diagram's order and participants too.
+- Do diagrams carry the detail in diagrams.md §7 (method and path, columns, payload fields, timeouts with keys), the colors and legend from §8, and step numbers matching the text? Are they readable (no overlaps, sub-flows used instead of one unreadable diagram)? In drawio mode, open the `.drawio.svg` files; the embedded XML (`content` attribute) shows labels and styles.
 
 Skip pure style preferences. Every finding must name something a reader would get wrong or be unable to do.
 

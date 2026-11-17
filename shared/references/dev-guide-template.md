@@ -27,6 +27,8 @@ Structure below. Keep the anchors and subtitles exactly as conventions §3–4 s
 ## 2. How the app is structured
 > …
 
+<structure diagram (diagrams.md §6)>
+
 <Folder tree, two or three levels, only folders that matter, one comment per line.>
 <Then: layering rules a dev must respect (e.g. handlers never touch the DB directly), each with path:line evidence.>
 
@@ -53,6 +55,8 @@ Where config is loaded: `internal/config/config.go:20-61`.
 ## 4. Startup
 > …
 
+<startup diagram (diagrams.md §6)>
+
 <Numbered sequence from process start to "ready to serve": config load, DI/wiring, connections, migrations, background workers, server listen. Each step with path:line. State what makes startup fail fast.>
 
 <!-- docgen:section id="app-flow" -->
@@ -68,13 +72,21 @@ Where config is loaded: `internal/config/config.go:20-61`.
 ### 5.1 Create payment (`POST /v1/payments`)
 > …
 
-<diagram (see diagrams.md)>
+**Flowchart**
+
+![Create payment — flowchart](diagrams/create-payment.flow.drawio.svg)
+
+<one image per sub-flow, captioned "Sub-flow ▶ <name>:">
+
+**Sequence**
+
+![Create payment — sequence](diagrams/create-payment.seq.drawio.svg)
 
 1. `PaymentHandler.Create` validates the body (`internal/handler/payment.go:42-60`); 400 on missing `order_id`.
 2. `PaymentService.Create` locks the order row (`internal/service/payment.go:30-55`) …
 3. …
 
-**Errors:** <which errors, where produced, what the caller gets>
+**Errors:** <every error branch in the flowchart: where it's produced (path:line), what the caller gets>
 **Side effects:** <rows written, events published, external calls>
 
 <!-- docgen:section id="data-flow" -->

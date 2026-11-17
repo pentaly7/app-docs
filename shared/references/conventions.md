@@ -1,4 +1,4 @@
-# Conventions (template version 1)
+# Conventions (template version 2)
 
 Every agent and script in this plugin follows this file. The validator (`docs_tool.py validate`) checks the parts marked **[checked]**, so breaking them shows up as a failure in the report.
 
@@ -21,10 +21,10 @@ Every agent and script in this plugin follows this file. The validator (`docs_to
 | | Dev doc | Operator guide |
 |---|---|---|
 | Reader | A developer who will maintain the app after you | An operator who investigates incidents without asking devs |
-| Language | Software-engineering English | Bahasa Indonesia, "Anda", standard but conversational, no slang. Tech terms stay English. Business/domain terms stay in their original form. |
+| Language | Software-engineering English | Casual Bahasa Indonesia, slang allowed, no "Anda" and no "kamu". Tech terms stay English. Business/domain terms stay in their original form. Humanized as the last writing step (`humanizer-id.md`). |
 | Code refs | `path:line` for every process **[checked]** | Never a file path or line number **[checked]**. Env var names, table/queue/topic names, URLs, log commands and CLI commands are allowed and encouraged. |
 | Marks | Unverified, contradiction, security finding, removed, diagram-outdated | Only removed and diagram-outdated. Uncertain behavior is simply left out. |
-| Diagrams | Shared with the operator guide (same files, English labels) | Same files |
+| Diagrams | Structure, startup, flowchart + sequence per important flow, data-flow, all colored with a legend (`diagrams.md`) | The same files: structure and startup go in `how-it-works` |
 
 Both docs describe the same code at the same commit. If they disagree, one of them is wrong.
 
@@ -44,8 +44,9 @@ docs/
     ├── operator-guide.md     # single mode
     ├── dev/                  # split mode (replaces dev-guide.md)
     ├── operator/             # split mode (replaces operator-guide.md)
-    └── diagrams/
-        ├── <flow-id>.drawio.svg   # draw.io mode
+    └── diagrams/              # draw.io mode; names in diagrams.md §3
+        ├── <flow-id>.flow.drawio.svg
+        ├── <flow-id>.seq.drawio.svg
         └── ...
 ```
 
@@ -58,9 +59,9 @@ dev/01-overview.md  02-structure.md  03-setup.md  04-startup.md
 dev/05-app-flow/00-index.md  05-app-flow/<NN>-<flow-id>.md
 dev/06-data-flow.md  07-dev-notes.md  08-glossary.md
 
-operator/01-setup.md
-operator/02-app-flow/00-index.md  02-app-flow/<NN>-<flow-id>.md
-operator/03-data-flow.md  04-troubleshooting.md  05-glossary.md
+operator/01-setup.md  02-how-it-works.md
+operator/03-app-flow/00-index.md  03-app-flow/<NN>-<flow-id>.md
+operator/04-data-flow.md  05-troubleshooting.md  06-glossary.md
 ```
 
 ## 3. Section anchors and IDs
@@ -75,7 +76,7 @@ Put an anchor comment on the line directly above every `##` and `###` heading th
 - IDs are stable. Never derive them from the heading text, which can be translated or reworded. Use the flow ID for flows.
 - Top-level IDs **[checked]**:
   - dev: `overview`, `structure`, `setup`, `startup`, `app-flow`, `data-flow`, `dev-notes`, `glossary`
-  - operator: `setup`, `app-flow`, `data-flow`, `troubleshooting`, `glossary`
+  - operator: `setup`, `how-it-works`, `app-flow`, `data-flow`, `troubleshooting`, `glossary`
 - A flow has the ID `app-flow/<flow-id>` in **both** docs.
 - `<flow-id>` is kebab-case and stable: `create-payment`, `consume-order-created`, `page-checkout`, `cron-daily-settlement`.
 
@@ -152,7 +153,7 @@ Operators need production facts (where logs go, health check URL, per-environmen
 A **flow** is one entry point into the app: HTTP endpoint, gRPC method, queue/topic consumer, scheduled job, CLI command, or (frontend) a page/route.
 
 - Every detected flow appears in **both** docs and in `apps/<app-id>.json` **[checked]**.
-- **Important** flows get a full subsection with steps and a diagram **[checked]**. The rest go in a table in the `app-flow` index (dev: flow, purpose, `path:line`; operator: flow, purpose, what to check when it fails).
+- **Important** flows get a full subsection with steps, a flowchart and a sequence diagram **[checked]**. The rest go in a table in the `app-flow` index (dev: flow, purpose, `path:line`; operator: flow, purpose, what to check when it fails).
 - Choose importance from the code alone. Rank higher when a flow:
   - moves money or changes balances
   - does auth or permissions

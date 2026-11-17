@@ -13,17 +13,21 @@ Subcommands (all print JSON to stdout):
 Exit codes: 0 ok, 1 validation failures found, 2 usage/environment error.
 """
 import argparse
+import base64
 import datetime
 import hashlib
+import html
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import urllib.parse
+import zlib
 from pathlib import Path
 
-TEMPLATE_VERSION = 1
+TEMPLATE_VERSION = 2
 DOCS_DIR = "docs"
 
 PRUNE_DIRS = {
@@ -57,11 +61,17 @@ SUBTITLE_RE = re.compile(
 )
 CODE_REF_RE = re.compile(r"`([A-Za-z0-9_.@+/-]+\.([A-Za-z0-9]+)):(\d+)(?:-(\d+))?`")
 IMAGE_RE = re.compile(r"!\[[^\]]*\]\(([^)\s]+\.drawio\.svg)\)")
-MERMAID_RE = re.compile(r"^```mermaid\s*$", re.M)
+MERMAID_BLOCK_RE = re.compile(r"^```mermaid[ \t]*\n(.*?)^```", re.M | re.S)
+PRONOUN_RE = re.compile(r"\b(Anda|kamu)\b", re.I)
+# Sections that must carry diagrams, with the minimum count (diagrams.md §1).
+DIAGRAM_SECTIONS = {
+    "dev": {"structure": 1, "startup": 1, "data-flow": 1},
+    "op": {"how-it-works": 2, "data-flow": 1},
+}
 DEV_ONLY_MARKS = ("**Unverified:**", "**Contradiction:**", "**Security finding:**")
 REQUIRED_SECTIONS = {
     "dev": ["overview", "structure", "setup", "startup", "app-flow", "data-flow", "dev-notes", "glossary"],
-    "op": ["setup", "app-flow", "data-flow", "troubleshooting", "glossary"],
+    "op": ["setup", "how-it-works", "app-flow", "data-flow", "troubleshooting", "glossary"],
 }
 SECRET_PATTERNS = [
     ("aws access key", re.compile(r"AKIA[0-9A-Z]{16}")),
@@ -405,12 +415,63 @@ def _is_code_ref(path, ext, repo):
     return "/" in path or ext.lower() in CODE_EXTS or (Path(repo) / path).exists()
 
 
+def _diagrams_in(text):
+    """(kind, source) for every diagram in a markdown fragment; kind is flowchart, sequence or other."""
+    found = []
+    for image in IMAGE_RE.findall(text):
+        name = Path(image).name
+        found.append(("sequence" if ".seq." in name else "flowchart" if ".flow." in name else "other", image))
+    for body in MERMAID_BLOCK_RE.findall(text):
+        first = next((l.strip() for l in body.splitlines() if l.strip()), "")
+        kind = "sequence" if first.startswith("sequenceDiagram") else "flowchart" if first.startswith(("flowchart", "graph")) else "other"
+        found.append((kind, body))
+    return found
+
+
+def _drawio_xml(svg_text):
+    """Diagram XML embedded in a .drawio.svg (pages joined), and the page count; (None, 0) if not editable."""
+    match = re.search(r'\scontent="([^"]*)"', svg_text)
+    if not match:
+        return None, 0
+    pages = re.findall(r"<diagram\b[^>]*>(.*?)</diagram>", html.unescape(match.group(1)), re.S)
+    xml = []
+    for inner in (p.strip() for p in pages):
+        if inner.startswith("<"):
+            xml.append(inner)
+            continue
+        try:  # draw.io's compressed form: base64 of raw deflate of URL-encoded XML
+            xml.append(urllib.parse.unquote(zlib.decompress(base64.b64decode(inner), -15).decode("utf-8")))
+        except (ValueError, zlib.error, UnicodeDecodeError):
+            xml.append("")
+    return "\n".join(xml), len(pages)
+
+
+def _drawio_problems(path):
+    """(failures, warnings) for one .drawio.svg against diagrams.md §2, §8, §9."""
+    xml, pages = _drawio_xml(_read(path, 20_000_000))
+    if xml is None:
+        return [("diagram-not-editable", "no embedded draw.io XML (export with -e)")], []
+    failures, warnings = [], []
+    if pages > 1:
+        failures.append(("diagram-multi-page", "%d pages; only the first renders — split into files" % pages))
+    fills = {c.upper() for c in re.findall(r"fillColor=(#[0-9A-Fa-f]{6})", xml)} - {"#FFFFFF"}
+    if len(fills) < 2:
+        failures.append(("diagram-no-color", "fewer than 2 fill colors"))
+    if not re.search(r'value="[^"]*legend', xml, re.I):
+        failures.append(("diagram-no-legend", "no Legend box"))
+    if not re.search(r'background="#(?:fff|ffffff)"', xml, re.I):
+        warnings.append("white page background not set")
+    return failures, warnings
+
+
+
 def cmd_validate(args):
     repo = Path(args.repo).resolve()
     app_state = load_json(args.app_state)
     sections = app_state.get("sections", {})
     files = FileAtCommit(repo)
     failures, warnings = [], []
+    checked_images = set()
 
     def fail(doc, line, rule, message):
         failures.append({"doc": doc, "line": line, "rule": rule, "message": message})
@@ -438,10 +499,22 @@ def cmd_validate(args):
                 text = next((d.section_text(sid) for d in doc_list if d.section_text(sid) is not None), None)
                 if text is None:
                     fail(doc_list[0].rel, 0, "flow-section-missing", "important flow '%s' has no section" % flow["id"])
-                elif not (MERMAID_RE.search(text) or IMAGE_RE.search(text)):
-                    fail(doc_list[0].rel, 0, "diagram-missing", "section '%s' has no diagram" % sid)
+                    continue
+                missing = {"flowchart", "sequence"} - {kind for kind, _ in _diagrams_in(text)}
+                if missing:
+                    fail(doc_list[0].rel, 0, "diagram-missing", "section '%s' has no %s" % (sid, " or ".join(sorted(missing))))
+
+        for sid, minimum in DIAGRAM_SECTIONS[prefix].items():
+            text = next((d.section_text(sid) for d in doc_list if d.section_text(sid) is not None), None)
+            if text is not None and len(_diagrams_in(text)) < minimum:
+                fail(doc_list[0].rel, 0, "diagram-missing", "section '%s' needs %d diagram(s)" % (sid, minimum))
 
         for doc in doc_list:
+            text = "\n".join(doc.lines)
+            for block in MERMAID_BLOCK_RE.finditer(text):
+                first = block.group(1).lstrip().split("\n", 1)[0]
+                if first.startswith(("flowchart", "graph")) and "classDef" not in block.group(1):
+                    fail(doc.rel, text.count("\n", 0, block.start()) + 1, "diagram-no-color", "Mermaid flowchart without classDef colors")
             for line_index, sid in doc.anchors:
                 rest = [l for l in doc.lines[line_index + 1:line_index + 4] if l.strip()]
                 if not rest or not HEADING_RE.match(rest[0]):
@@ -450,8 +523,18 @@ def cmd_validate(args):
                     fail(doc.rel, line_index + 1, "subtitle", "section '%s' has no valid provenance subtitle" % sid)
             for i, line in enumerate(doc.lines, start=1):
                 for image in IMAGE_RE.findall(line):
-                    if not (doc.path.parent / image).resolve().is_file():
+                    target = (doc.path.parent / image).resolve()
+                    if not target.is_file():
                         fail(doc.rel, i, "diagram-file", "diagram file not found: %s" % image)
+                    elif target not in checked_images:
+                        checked_images.add(target)
+                        problems, notes = _drawio_problems(target)
+                        for rule, message in problems:
+                            fail(doc.rel, i, rule, "%s: %s" % (image, message))
+                        warnings.extend("%s: %s" % (image, note) for note in notes)
+                if kind == "operator":
+                    for word in PRONOUN_RE.findall(re.sub(r"`[^`]*`", "", line)):
+                        warnings.append("%s:%d uses '%s' (operator guide addresses no one)" % (doc.rel, i, word))
                 for match in CODE_REF_RE.finditer(line):
                     path, ext, start, end = match.group(1), match.group(2), int(match.group(3)), match.group(4)
                     if not _is_code_ref(path, ext, repo):

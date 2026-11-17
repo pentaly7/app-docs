@@ -1,7 +1,7 @@
 ---
 name: update
-description: Report drift between the existing app docs in /docs and the current code, then fix only the affected sections (new flows added, removed flows marked, renamed files followed). Only touches apps that are already documented; use generate to document new apps. Add "drawio" to redraw changed diagrams with the draw.io skill.
-argument-hint: "[drawio]"
+description: Report drift between the existing app docs in /docs and the current code, then fix only the affected sections (new flows added, removed flows marked, renamed files followed). Only touches apps that are already documented; use generate to document new apps. Add "drawio" to redraw changed diagrams with the draw.io skill, and "humanizer" to apply your installed humanizer skill on top of the built-in Indonesian one (or run those skills first in the same session).
+argument-hint: "[drawio] [humanizer]"
 disable-model-invocation: true
 ---
 
@@ -17,7 +17,7 @@ The narrow version of `generate`: it never creates docs for apps that aren't doc
 
 2. No `docs/.docgen/state.json` → tell the user to run `/app-docs:generate` first, and stop.
 
-3. Preflight and diagram mode (pipeline §2–3).
+3. Preflight, diagram mode and humanizer (pipeline §2–3).
 
 4. Run `TOOL drift --repo REPO` and show the **drift report** first, compact:
 
@@ -31,7 +31,7 @@ The narrow version of `generate`: it never creates docs for apps that aren't doc
    - `missing_app_state` → mention them and suggest generate. Don't bootstrap them here.
    - Apps whose stage isn't `done` → resume them per the pipeline table.
 
-5. For each app with stale sections, run the update branch of the pipeline: app-documenter `update` → goldfish-reviewer limited to the changed sections → app-documenter `fix` → validate. Up to 3 apps in parallel, `state.json` written after every stage change.
+5. For each app with stale sections, run the update branch of the pipeline: app-documenter `update` → goldfish-reviewer limited to the changed sections → app-documenter `fix` → humanizer-id on the changed operator sections → validate. Up to 3 apps in parallel, `state.json` written after every stage change.
 
 6. Final report (pipeline §6), plus the list of apps that were already up to date.
 

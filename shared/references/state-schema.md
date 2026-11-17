@@ -11,7 +11,7 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 
 ```json
 {
-  "template_version": 1,
+  "template_version": 2,
   "split_all": false,
   "apps": {
     "payment-api": {
@@ -39,7 +39,7 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 ```
 
 - `kind`: `backend` | `frontend` | `worker` | `cli` | `library`.
-- `stage` (per-app pipeline, used for resume): `pending` → `drafted` → `reviewed` → `done`. Also `failed`, with a `stage_error` string.
+- `stage` (per-app pipeline, used for resume): `pending` → `drafted` → `reviewed` → `fixed` → `done`. Also `failed`, with a `stage_error` string.
 - `split_all`: true when the repo has more than 10 apps (conventions §10).
 - `docmost.pages` keys: the app ID for the app's container page; `<app-id>/operator` and `<app-id>/dev` for split-mode container pages; otherwise the doc file path relative to `docs/`. `docmost` stays `{}` until the first sync.
 
