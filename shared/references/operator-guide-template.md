@@ -1,47 +1,48 @@
-# Operator guide template (template version 2)
+# Operator guide template (template version 2, humanizer version 2)
 
 Audience: an operator who runs and monitors the app and wants to investigate an incident without asking a developer. They know servers, logs and databases, but they don't read the source code.
 
 ## Language
 
-- Bahasa Indonesia, **casual**: like a senior colleague explaining in chat. Everyday slang is fine (`nggak`, `udah`, `aja`, `kalau`, `bikin`, `cek`) when it reads naturally. Don't force it.
-- **No "Anda" and no "kamu".** Write sentences that don't address anyone: imperatives (`Cek log …`, `Restart service …`) or plain statements (`Kalau timeout, request-nya dicoba lagi 3 kali`).
-- Tech terms stay in English: endpoint, request, response, queue, topic, consumer, retry, timeout, log, config, deploy, health check, cache, cron job, payload, status code.
+- Bahasa Indonesia, **semiformal**: natural, clear work language, the way a careful senior operator writes an internal wiki. Not stiff officialese, and **no slang** (`nggak`, `gak`, `udah`, `aja`, `banget`, `bikin`, `kalo`, `gimana` are out).
+- **No "Anda" and no "kamu".** Write sentences that don't address anyone: imperatives (`Periksa log …`, `Jalankan ulang service …`) or plain statements (`Jika timeout, request dicoba ulang 3 kali`).
+- **No em dash or en dash** (— –) in prose, titles, captions or placeholders. Use a colon, a comma, or two sentences. The humanizer's metrics count every dash.
+- Tech terms stay in English, without italics and without an Indonesian translation in parentheses: endpoint, request, response, queue, topic, consumer, retry, timeout, log, config, deploy, health check, cache, cron job, payload, status code. The glossary explains them.
 - Business/domain terms stay as the code and the business write them: "settlement", "top-up", "refund", "Faktur".
 - No file paths or line numbers. Env var names, table/queue names, URLs, log and CLI commands are fine, in backticks.
 - No Unverified/Contradiction/Security marks. Leave out anything uncertain, without hinting that something is missing.
-- The final text goes through the Indonesian humanizer (`humanizer-id.md`). Write naturally from the start anyway, since the humanizer polishes, it doesn't rescue.
+- The final text goes through humanizer-indonesia (`humanizer.md`). Write naturally from the start anyway, since the humanizer polishes, it doesn't rescue.
 
-| Kaku / AI banget | Natural |
+| Kaku / terasa AI | Semiformal yang natural |
 |---|---|
-| "Apabila permintaan mengalami kegagalan, Anda dapat memeriksa log aplikasi." | "Kalau request gagal, cek log di `/var/log/payment/app.log`." |
-| "Proses settlement memainkan peran penting dalam memastikan…" | "Settlement jalan tiap hari jam 01.00, tugasnya nandain pembayaran yang udah dibayar ke merchant." |
-| "Permintaan akan diteruskan ke antrean pesan." | "Request-nya diterusin ke queue `order.created`." |
+| "Apabila permintaan mengalami kegagalan, Anda dapat melakukan pengecekan terhadap log aplikasi." | "Jika request gagal, periksa log di `/var/log/payment/app.log`." |
+| "Proses settlement memainkan peran penting dalam memastikan…" | "Settlement berjalan setiap hari pukul 01.00 dan menandai pembayaran yang sudah dibayarkan ke merchant." |
+| "Kalo request-nya gagal, cek aja log-nya." (slang) | "Jika request gagal, periksa log aplikasi." |
 
 ## Structure
 
 Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagrams.md`: the same files as the dev guide.
 
 ```markdown
-# <App name> — Panduan Operator
+# <App name>: Panduan Operator
 
 <!-- docgen:section id="setup" -->
 ## 1. Setup
 > `a1b2c3d` · `main` · 2026-11-16 · verified by Rizki Tegar
 
-<1–2 kalimat: aplikasi ini buat apa, siapa yang pakai.>
+<1 sampai 2 kalimat: fungsi aplikasi dan penggunanya.>
 
 ### Yang dibutuhkan
-<database, broker, cache, service lain, plus versinya>
+<database, broker, cache, service lain, beserta versinya>
 
 ### Konfigurasi
 | Key | Wajib | Fungsi | Contoh / default |
 |---|---|---|---|
 | `DB_DSN` | ya | Koneksi ke database Postgres | `<postgres://user:password@host:5432/db>` |
-| `PAYMENT_TIMEOUT_MS` | nggak | Batas waktu manggil payment gateway | default `5000` |
+| `PAYMENT_TIMEOUT_MS` | tidak | Batas waktu memanggil payment gateway | default `5000` |
 
 ### Cara menjalankan
-<perintah start/stop/restart, port, cara cek aplikasinya udah siap>
+<perintah start/stop/restart, port, cara memastikan aplikasi sudah siap>
 
 ### Deployment
 <apa yang ada di repo, atau placeholder "Belum diketahui" dari conventions §8>
@@ -52,22 +53,22 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 
 ### Komponen
 <structure diagram>
-<Penjelasan singkat tiap komponen: apa tugasnya, ngobrol sama siapa (DB, queue, service lain, sistem eksternal).>
+<Penjelasan singkat tiap komponen: tugasnya dan dengan apa komponen itu terhubung (DB, queue, service lain, sistem eksternal).>
 
 ### Dari start sampai siap
 <startup diagram>
-<Urutan langkah dari aplikasi dinyalakan sampai siap terima request. Sebutkan kondisi yang bikin aplikasi langsung mati (config kosong, DB nggak bisa dihubungi) dan apa yang muncul di log.>
+<Urutan langkah dari aplikasi dinyalakan sampai siap menerima request. Sebutkan kondisi yang membuat aplikasi langsung berhenti (config kosong, DB tidak bisa dihubungi) dan pesan yang muncul di log.>
 
 <!-- docgen:section id="app-flow" -->
 ## 3. Alur Aplikasi
 > …
 
-| Flow | Fungsi | Kalau gagal, cek |
+| Flow | Fungsi | Jika gagal, periksa |
 |---|---|---|
-| `POST /v1/payments` | Bikin pembayaran | log `payment create failed`, tabel `payments` |
+| `POST /v1/payments` | Membuat pembayaran | log `payment create failed`, tabel `payments` |
 
 <!-- docgen:section id="app-flow/create-payment" -->
-### 3.1 Bikin pembayaran (`POST /v1/payments`)
+### 3.1 Membuat pembayaran (`POST /v1/payments`)
 > …
 
 **Flowchart**
@@ -76,17 +77,17 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 **Sequence**
 <sequence diagram>
 
-1. Data request dicek dulu. Kalau `order_id` kosong, response-nya `400`.
+1. Data request diperiksa lebih dulu. Jika `order_id` kosong, response `400`.
 2. …
 
 **Tanda berhasil:** <row baru di tabel `payments` status `PENDING`, log `payment created`>
-**Kalau gagal:** <gejala → penyebab paling mungkin → apa yang dicek, untuk tiap cabang error di flowchart>
+**Jika gagal:** <gejala, penyebab yang paling mungkin, lalu apa yang diperiksa, untuk setiap cabang error di flowchart>
 
 <!-- docgen:section id="data-flow" -->
 ## 4. Alur Data
 > …
 
-<data-flow diagram, lalu tabel: data apa, disimpan di mana, siapa yang nulis/baca, disimpan berapa lama>
+<data-flow diagram, lalu tabel: jenis data, lokasi penyimpanan, siapa yang menulis dan membaca, lama penyimpanan>
 
 <!-- docgen:section id="troubleshooting" -->
 ## 5. Troubleshooting
@@ -99,21 +100,21 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 <URL/perintah, arti tiap response>
 
 ### Error yang sering muncul
-| Pesan / gejala | Artinya | Yang dicek |
+| Pesan / gejala | Artinya | Yang diperiksa |
 |---|---|---|
 
 ### Config dan efeknya
-| Key | Kalau diubah | Gejala kalau salah |
+| Key | Jika diubah | Gejala jika salah |
 |---|---|---|
 
 <!-- docgen:section id="glossary" -->
 ## 6. Glosarium
 | Istilah | Arti |
 |---|---|
-| Settlement | Proses harian yang nandain pembayaran udah dibayarkan ke merchant |
+| Settlement | Proses harian yang menandai pembayaran yang sudah dibayarkan ke merchant |
 ```
 
-## Good vs. weak "Kalau gagal"
+## Good vs. weak "Jika gagal"
 
-Weak: "Kalau gagal, hubungi tim developer."
-Good: "Kalau response-nya `502` dan di log ada `gateway timeout`, berarti payment gateway lagi lambat atau nggak bisa dihubungi. Cek status gateway dan nilai `PAYMENT_TIMEOUT_MS`. Pembayarannya tetap kesimpan dengan status `PENDING`, nanti dicoba lagi sama cron `retry-pending-payments` tiap 5 menit."
+Weak: "Jika gagal, hubungi tim developer."
+Good: "Jika response `502` dan log berisi `gateway timeout`, payment gateway sedang lambat atau tidak bisa dihubungi. Periksa status gateway dan nilai `PAYMENT_TIMEOUT_MS`. Pembayaran tetap tersimpan dengan status `PENDING` dan akan dicoba ulang oleh cron `retry-pending-payments` setiap 5 menit."

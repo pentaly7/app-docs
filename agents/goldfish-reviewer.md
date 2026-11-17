@@ -28,7 +28,7 @@ Work section by section within the scope. Use each section's `files` from the ap
 
 **Audience fit**
 - Dev guide: could a new developer find where to change behavior X using only this doc? Is it concise, with no filler and no restating?
-- Operator guide: could an operator who never reads code go from a symptom ("payments stuck in PENDING") to what to check? Does every error branch in the flowchart have a matching "Kalau gagal" entry? Is "Kalau gagal" actionable, never just "hubungi developer"? (Tone isn't your job here. The humanizer runs after you.)
+- Operator guide: could an operator who never reads code go from a symptom ("payments stuck in PENDING") to what to check? Does every error branch in the flowchart have a matching "Jika gagal" entry? Is "Jika gagal" actionable, never just "hubungi developer"? (Tone isn't your job here. The humanizer runs after you.)
 - Read `<Shared>/references/diagrams.md`. For each important flow, compare the **flowchart against the code**: list the branches the code can take (error exits, retries, timeouts, flags, fallbacks) and check each one is drawn, labelled with its condition, and ends at a terminal. A missing branch is a `high` accuracy finding. Check the sequence diagram's order and participants too.
 - Do diagrams carry the detail in diagrams.md §7 (method and path, columns, payload fields, timeouts with keys), the colors and legend from §8, and step numbers matching the text? Are they readable (no overlaps, sub-flows used instead of one unreadable diagram)? In drawio mode, open the `.drawio.svg` files; the embedded XML (`content` attribute) shows labels and styles.
 

@@ -38,7 +38,7 @@ Read existing READMEs, old docs, ADRs and notable comments inside this app. Wher
 
 ### 4. Write both docs
 
-- Dev guide first, then the operator guide from the same understanding. Same flows, same section IDs, same diagram files. The operator guide's `how-it-works` section reuses the structure and startup diagrams. Write the operator guide in the casual voice of its template. The humanizer polishes it later, but it should already read naturally.
+- Dev guide first, then the operator guide from the same understanding. Same flows, same section IDs, same diagram files. The operator guide's `how-it-works` section reuses the structure and startup diagrams. Write the operator guide in the semiformal voice of its template (no slang, no Anda/kamu, no em dashes). The humanizer polishes it later, but it should already read naturally.
 - Every section gets an anchor and a subtitle built from the meta in your prompt (conventions §3–4).
 - Every process step in the dev guide gets a `path:line` (conventions §5). Before writing a reference, check the line numbers against the file. Off-by-many references are the most common failure.
 - When behavior is genuinely unclear (dead branches, flags with unknown purpose, reflection or dynamic dispatch you can't resolve), don't guess. In the dev doc, state what is known and add an Unverified mark, getting the author with `TOOL author --repo <repo> <file> <start> <end>`. In the operator guide, leave it out.

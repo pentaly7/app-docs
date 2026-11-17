@@ -1,7 +1,7 @@
 ---
 name: update
-description: Report drift between the existing app docs in /docs and the current code, then fix only the affected sections (new flows added, removed flows marked, renamed files followed). Only touches apps that are already documented; use generate to document new apps. Add "drawio" to redraw changed diagrams with the draw.io skill, and "humanizer" to apply your installed humanizer skill on top of the built-in Indonesian one (or run those skills first in the same session).
-argument-hint: "[drawio] [humanizer]"
+description: Report drift between the existing app docs in /docs and the current code, then fix only the affected sections (new flows added, removed flows marked, renamed files followed). Only touches apps that are already documented; use generate to document new apps. The operator guide is humanized with the humanizer-indonesia skill. Add "drawio" (or run the draw.io skill first) to redraw changed diagrams with draw.io.
+argument-hint: "[drawio]"
 disable-model-invocation: true
 ---
 
@@ -30,8 +30,9 @@ The narrow version of `generate`: it never creates docs for apps that aren't doc
    - `template_changed` → say so. Every documented app gets regenerated (update mode, "Template changed: yes"), and `template_version` is set to current at the end.
    - `missing_app_state` → mention them and suggest generate. Don't bootstrap them here.
    - Apps whose stage isn't `done` → resume them per the pipeline table.
+   - `humanizer_changed` → re-humanize every operator guide (stage `fixed`), then set `humanizer_version` to current.
 
-5. For each app with stale sections, run the update branch of the pipeline: app-documenter `update` → goldfish-reviewer limited to the changed sections → app-documenter `fix` → humanizer-id on the changed operator sections → validate. Up to 3 apps in parallel, `state.json` written after every stage change.
+5. For each app with stale sections, run the update branch of the pipeline: app-documenter `update` → goldfish-reviewer limited to the changed sections → app-documenter `fix` → operator-humanizer on the changed operator sections → validate. Up to 3 apps in parallel, `state.json` written after every stage change.
 
 6. Final report (pipeline §6), plus the list of apps that were already up to date.
 

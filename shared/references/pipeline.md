@@ -42,11 +42,11 @@ Without a draw.io request, the mode is `mermaid`, silently.
 
 ### Humanizer
 
-The built-in Indonesian humanizer (`humanizer-id.md`, the humanizer-id agent) **always** runs on the operator guide. An installed humanizer skill is added on top **only when the user asked for it in this run**, using the same two triggers as draw.io:
-- the arguments contain `humanizer`, or
-- a humanizer skill's instructions are already in this conversation (a "Base directory for this skill: …humaniz…" header).
+The operator guide is always humanized with the **humanizer-indonesia** skill (see `humanizer.md`). This doesn't depend on the arguments.
 
-Find the folder the same way as for draw.io (`*humaniz*` instead of `*drawio*`, also `~/.claude/plugins/**/skills/*humaniz*`). If it was asked for but not found, say so in one line and continue with the built-in rules only. Pass `HUMANIZER_SKILL=<folder or "none">` to the humanizer-id agent.
+1. Find the skill folder: the first folder with a `SKILL.md` among `~/.claude/skills/humanizer-indonesia`, `REPO/.claude/skills/humanizer-indonesia`, `~/.agents/skills/humanizer-indonesia`, `~/.claude/plugins/**/skills/humanizer-indonesia`. If its instructions are already loaded in this conversation, use that base directory.
+2. Found → `HUMANIZER_SKILL=<folder>`.
+3. Not found → `HUMANIZER_SKILL=none`, and warn once: "humanizer-indonesia not installed — using the plugin's fallback rules. Install: `git clone https://github.com/adhiprib/humanizer-indonesia ~/.claude/skills/humanizer-indonesia`". Continue.
 
 ## 4. Per-app pipeline and resume
 
@@ -57,14 +57,15 @@ Each app moves through stages, recorded in `state.json → apps.<id>.stage`. **W
 | `pending` (or `failed` before drafting) | app-documenter, mode `fresh` | `drafted` |
 | `drafted` | goldfish-reviewer | `reviewed` |
 | `reviewed` | app-documenter, mode `fix` | `fixed` |
-| `fixed` | humanizer-id on the operator guide; then validate | `done` |
-| `done` + drift found | app-documenter `update` → goldfish-reviewer (changed sections only) → app-documenter `fix` → humanizer-id (changed operator sections only) → validate | `done` |
+| `fixed` | operator-humanizer on the operator guide; then validate | `done` |
+| `done` + drift found | app-documenter `update` → goldfish-reviewer (changed sections only) → app-documenter `fix` → operator-humanizer (changed operator sections only) → validate | `done` |
+| `done` + humanizer version changed, code unchanged | operator-humanizer on the whole operator guide → validate | `done` |
 
 Concurrency: run up to **3 apps at a time** (several Agent calls in one message), then the next batch. Stages within one app run in order. If an agent fails, record `stage: "failed"` and `stage_error`, move on to the other apps, and report the failure at the end. Never let one broken app block the rest.
 
 Validation (no LLM) after the humanizer step: `TOOL validate --repo REPO --app-state docs/.docgen/apps/<id>.json`. Failures **don't block writing**. Collect them for the report.
 
-Cost control: app-documenter and humanizer-id run on Sonnet and goldfish-reviewer on Opus, as set in their agent files. Goldfish runs once per app per run. Fixes are applied without a second review. The validator is the safety net.
+Cost control: app-documenter and operator-humanizer run on Sonnet and goldfish-reviewer on Opus, as set in their agent files. Goldfish runs once per app per run. Fixes are applied without a second review. The validator is the safety net.
 
 ## 5. Agent prompts
 
@@ -108,13 +109,13 @@ Mode: fix
 Findings: docs/.docgen/.work/review-<id>.json
 ```
 
-**humanizer-id**
+**operator-humanizer**
 ```
 Repo root: <REPO>
 Shared folder: <SHARED>
 App state: docs/.docgen/apps/<id>.json
 Scope: <"all sections" | list of op: section keys changed in this run>
-Humanizer skill: <HUMANIZER_SKILL path or "none">
+humanizer-indonesia skill: <HUMANIZER_SKILL path or "none">
 ```
 The humanizer runs last, after goldfish, so nothing undoes its tone. The validator is the only check after it.
 

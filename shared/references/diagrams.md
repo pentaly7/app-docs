@@ -51,20 +51,20 @@ docs/<app-id>/diagrams/
   <flow-id>.seq.drawio.svg             # sequence diagram        [checked: ".seq." in name]
 ```
 
-Embed each with a caption line (paths relative to the markdown file; split-mode files sit deeper, so adjust `../`):
+Embed each with a caption line, without em/en dashes because the operator guide uses the same lines (paths relative to the markdown file; split-mode files sit deeper, so adjust `../`):
 
 ```markdown
 **Flowchart**
 
-![Create payment — flowchart](diagrams/create-payment.flow.drawio.svg)
+![Create payment: flowchart](diagrams/create-payment.flow.drawio.svg)
 
 Sub-flow ▶ Validate request:
 
-![Create payment — sub-flow: validate request](diagrams/create-payment.flow.validate-request.drawio.svg)
+![Create payment, sub-flow validate request](diagrams/create-payment.flow.validate-request.drawio.svg)
 
 **Sequence**
 
-![Create payment — sequence](diagrams/create-payment.seq.drawio.svg)
+![Create payment: sequence](diagrams/create-payment.seq.drawio.svg)
 ```
 
 ## 4. Flowcharts: every branch
@@ -103,7 +103,7 @@ Put the facts a reader would otherwise have to dig out of code **in the diagram*
 | Element | Show |
 |---|---|
 | Entry | HTTP method + path, or topic/queue name, or cron schedule, or CLI command |
-| Process step | step number, what it does, and the function/class (`2. Lock order — OrderRepo.LockForUpdate`) |
+| Process step | step number, what it does, and the function/class (`2. Lock order: OrderRepo.LockForUpdate`) |
 | Decision | the actual condition (`amount <= 0?`, `status == PAID?`) |
 | Datastore | table and the operation with columns (`payments: INSERT id, order_id, amount, status=PENDING`) |
 | Queue/topic | name and payload fields (`order.created {order_id, total, items[]}`) |
@@ -177,7 +177,7 @@ flowchart TD
 
     S(["POST /v1/payments"]):::start --> V{"1. body valid?"}:::decision
     V -- "no" --> E400(["400 invalid_request"]):::err
-    V -- "yes" --> L["2. Lock order — OrderRepo.LockForUpdate"]:::step
+    V -- "yes" --> L["2. Lock order: OrderRepo.LockForUpdate"]:::step
     L --> DB[("orders: SELECT … FOR UPDATE")]:::store
     DB --> F{"order found?"}:::decision
     F -- "no" --> E404(["404 order_not_found"]):::err

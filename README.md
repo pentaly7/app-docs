@@ -3,7 +3,7 @@
 A Claude Code plugin that writes and maintains two documents for every app in a repository:
 
 - **Dev Guide**: software-engineering English, with `path:line` for every process. Sections: what the app is, structure, setup, startup, app flow, data flow, dev notes, glossary.
-- **Panduan Operator**: casual Bahasa Indonesia (no "Anda"/"kamu", slang OK, tech terms in English), humanized as the last step, no code references. Sections: setup, cara aplikasi bekerja, app flow, data flow, troubleshooting, glossary.
+- **Panduan Operator**: semiformal Bahasa Indonesia (no slang, no "Anda"/"kamu", tech terms in English), humanized with humanizer-indonesia as the last step, no code references. Sections: setup, cara aplikasi bekerja, app flow, data flow, troubleshooting, glossary.
 
 Docs are written to `/docs`, reviewed by a fresh-context "goldfish" agent (the Elephant-Goldfish pattern), checked by a non-LLM validator, and synced one-way to Docmost.
 
@@ -11,15 +11,13 @@ Docs are written to `/docs`, reviewed by a fresh-context "goldfish" agent (the E
 
 | Command | What it does |
 |---|---|
-| `/app-docs:generate [drawio] [humanizer]` | Main command. Fresh docs for new apps, drift update for documented ones, full regeneration after a template change, resume after an interrupted run. |
-| `/app-docs:update [drawio] [humanizer]` | Drift report, then fixes only the affected sections of already-documented apps. |
+| `/app-docs:generate [drawio]` | Main command. Fresh docs for new apps, drift update for documented ones, full regeneration after a template change, resume after an interrupted run. |
+| `/app-docs:update [drawio]` | Drift report, then fixes only the affected sections of already-documented apps. |
 | `/app-docs:sync [docmost-url]` | One-way sync to Docmost through your logged-in Chrome. The URL is saved after the first run. |
 
-Optional skills, used only when you ask for them, either by adding the word to the command or by running that skill first in the same session:
-- `drawio`: diagrams with the [draw.io skill](https://github.com/Agents365-ai/drawio-skill) as editable `.drawio.svg` files. Without it, diagrams are colored Mermaid blocks.
-- `humanizer`: your installed humanizer skill (any skill folder named `*humaniz*`), applied on top of the built-in Indonesian humanizer, which always runs.
-
-Both skills may use `disable-model-invocation`. When you ask for them, the plugin reads their `SKILL.md` directly, because subagents can't inherit skills loaded in your session.
+Skills this plugin uses:
+- **[humanizer-indonesia](https://github.com/adhiprib/humanizer-indonesia)** (dependency, always used): polishes the operator guide's prose in `semiformal` register, with the plugin's own voice preset (`shared/references/voice-operator-docs.md`). If it isn't installed, the plugin warns and uses its fallback rules. Install it with `git clone https://github.com/adhiprib/humanizer-indonesia ~/.claude/skills/humanizer-indonesia`.
+- **[draw.io skill](https://github.com/Agents365-ai/drawio-skill)** (optional): add `drawio` to the command, or run the skill first in the same session, to get editable `.drawio.svg` diagrams. Without it, diagrams are colored Mermaid blocks. It uses `disable-model-invocation`, so when you ask for it the plugin reads its `SKILL.md` directly, because subagents can't inherit skills loaded in your session.
 
 ## Diagrams
 
@@ -54,7 +52,7 @@ generate/update (orchestrator, your session)
        app-documenter (Sonnet)  → writes docs + docs/.docgen/apps/<app>.json
        goldfish-reviewer (Opus) → fresh context, reviews docs vs. code → findings
        app-documenter (Sonnet)  → applies findings it can verify (no re-review)
-       humanizer-id (Sonnet)    → humanizes the operator guide's prose only
+       operator-humanizer (Sonnet) → humanizer-indonesia on the operator guide's prose only
        docs_tool.py validate    → non-LLM checks; failures reported, not blocking
 ```
 
@@ -72,9 +70,13 @@ Every section carries `` > `sha` · `branch` · date · verified by <name> ``, a
 
 ## Customizing
 
-All writing rules live in `shared/references/`: `conventions.md` (the hard rules), the two templates, `diagrams.md`, `humanizer-id.md`, and `pipeline.md`. If you change them in a way that should regenerate existing docs, bump `TEMPLATE_VERSION` in `shared/scripts/docs_tool.py` (and the version in the title of `conventions.md`). The next `generate` regenerates everything.
+All writing rules live in `shared/references/`: `conventions.md` (the hard rules), the two templates, `diagrams.md`, `humanizer.md`, `voice-operator-docs.md`, and `pipeline.md`. If you change them in a way that should regenerate existing docs, bump `TEMPLATE_VERSION` in `shared/scripts/docs_tool.py` (and the version in the title of `conventions.md`). The next `generate` regenerates everything. If you only change the humanizer rules or the voice preset, bump `HUMANIZER_VERSION` instead: the next run re-humanizes the operator guides and touches nothing else.
 
-## Upgrading from 1.x
+## Upgrading
+
+From 2.0: the next `/app-docs:generate` only re-humanizes every operator guide (semiformal, no slang). Diagrams and the dev guide stay as they are.
+
+### From 1.x
 
 Template version 2 changes diagrams, the operator guide's voice and its sections, so the next `/app-docs:generate` regenerates every documented app. Commit or stash first so you can compare.
 

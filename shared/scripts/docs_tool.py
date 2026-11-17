@@ -28,6 +28,8 @@ import zlib
 from pathlib import Path
 
 TEMPLATE_VERSION = 2
+# Bumped when only the operator-guide humanizer rules change: re-humanize, don't regenerate.
+HUMANIZER_VERSION = 2
 DOCS_DIR = "docs"
 
 PRUNE_DIRS = {
@@ -63,6 +65,8 @@ CODE_REF_RE = re.compile(r"`([A-Za-z0-9_.@+/-]+\.([A-Za-z0-9]+)):(\d+)(?:-(\d+))
 IMAGE_RE = re.compile(r"!\[[^\]]*\]\(([^)\s]+\.drawio\.svg)\)")
 MERMAID_BLOCK_RE = re.compile(r"^```mermaid[ \t]*\n(.*?)^```", re.M | re.S)
 PRONOUN_RE = re.compile(r"\b(Anda|kamu)\b", re.I)
+SLANG_RE = re.compile(r"\b(nggak|ngga|gak|enggak|udah|aja|banget|bikin|kalo|gimana|nyimpen|ngecek|nandain)\b", re.I)
+DASH_RE = re.compile(r"[\u2013\u2014]")
 # Sections that must carry diagrams, with the minimum count (diagrams.md §1).
 DIAGRAM_SECTIONS = {
     "dev": {"structure": 1, "startup": 1, "data-flow": 1},
@@ -158,6 +162,7 @@ def cmd_meta(args):
         "date": datetime.date.today().isoformat(),
         "user": git(repo, "config", "user.name", check=False).strip() or "unknown",
         "template_version": TEMPLATE_VERSION,
+        "humanizer_version": HUMANIZER_VERSION,
     })
 
 
@@ -303,6 +308,8 @@ def cmd_drift(args):
         "template_version_current": TEMPLATE_VERSION,
         "template_version_state": state.get("template_version"),
         "template_changed": state.get("template_version") != TEMPLATE_VERSION,
+        "humanizer_version_current": HUMANIZER_VERSION,
+        "humanizer_changed": state.get("humanizer_version") != HUMANIZER_VERSION,
         "apps": {},
         "missing_app_state": [],
         "new_app_candidates": [],
@@ -532,9 +539,14 @@ def cmd_validate(args):
                         for rule, message in problems:
                             fail(doc.rel, i, rule, "%s: %s" % (image, message))
                         warnings.extend("%s: %s" % (image, note) for note in notes)
-                if kind == "operator":
-                    for word in PRONOUN_RE.findall(re.sub(r"`[^`]*`", "", line)):
+                if kind == "operator" and not ANCHOR_RE.match(line.strip()) and not line.startswith(">"):
+                    prose = re.sub(r"`[^`]*`", "", line)
+                    for word in PRONOUN_RE.findall(prose):
                         warnings.append("%s:%d uses '%s' (operator guide addresses no one)" % (doc.rel, i, word))
+                    for word in SLANG_RE.findall(prose):
+                        warnings.append("%s:%d slang '%s' (semiformal, no slang)" % (doc.rel, i, word))
+                    if DASH_RE.search(prose):
+                        warnings.append("%s:%d em/en dash in operator prose" % (doc.rel, i))
                 for match in CODE_REF_RE.finditer(line):
                     path, ext, start, end = match.group(1), match.group(2), int(match.group(3)), match.group(4)
                     if not _is_code_ref(path, ext, repo):

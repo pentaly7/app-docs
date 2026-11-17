@@ -21,7 +21,7 @@ Every agent and script in this plugin follows this file. The validator (`docs_to
 | | Dev doc | Operator guide |
 |---|---|---|
 | Reader | A developer who will maintain the app after you | An operator who investigates incidents without asking devs |
-| Language | Software-engineering English | Casual Bahasa Indonesia, slang allowed, no "Anda" and no "kamu". Tech terms stay English. Business/domain terms stay in their original form. Humanized as the last writing step (`humanizer-id.md`). |
+| Language | Software-engineering English | Semiformal Bahasa Indonesia: natural, no slang, no "Anda" and no "kamu", no em/en dashes. Tech terms stay English. Business/domain terms stay in their original form. Humanized as the last writing step with humanizer-indonesia (`humanizer.md`). |
 | Code refs | `path:line` for every process **[checked]** | Never a file path or line number **[checked]**. Env var names, table/queue/topic names, URLs, log commands and CLI commands are allowed and encouraged. |
 | Marks | Unverified, contradiction, security finding, removed, diagram-outdated | Only removed and diagram-outdated. Uncertain behavior is simply left out. |
 | Diagrams | Structure, startup, flowchart + sequence per important flow, data-flow, all colored with a legend (`diagrams.md`) | The same files: structure and startup go in `how-it-works` |
@@ -146,7 +146,7 @@ Both docs:
 Operators need production facts (where logs go, health check URL, per-environment config, how it's deployed) that often live outside the repo. Look in Dockerfile, docker-compose, Helm/k8s manifests, `.gitlab-ci.yml`, Procfile, systemd units and Makefile first. When nothing in the repo says, write the placeholder (it isn't an uncertainty mark, so it appears in both docs):
 
 - Dev: `_Unknown — not in this repository. Fill in manually._`
-- Operator: `_Belum diketahui — tidak ada di repository ini. Mohon diisi manual._`
+- Operator: `_Belum diketahui: tidak ada di repository ini. Mohon diisi manual._`
 
 ## 9. Flows: important vs. listed
 
