@@ -9,6 +9,7 @@ Subcommands (all print JSON to stdout):
   validate    non-LLM checks of one app's docs against conventions.md
   sync-plan   Docmost page plan: prepared markdown, hashes, what changed
   sync-record record one synced Docmost page in state.json
+  svg-theme   apply the light/dark diagram palette to every .drawio.svg
 
 Exit codes: 0 ok, 1 validation failures found, 2 usage/environment error.
 """
@@ -30,6 +31,24 @@ from pathlib import Path
 TEMPLATE_VERSION = 2
 # Bumped when only the operator-guide humanizer rules change: re-humanize, don't regenerate.
 HUMANIZER_VERSION = 2
+# Bumped when only diagram rules change: redraw diagrams, keep the text.
+DIAGRAM_VERSION = 3
+
+# Light colors used by diagrams.md §8 → their dark-palette counterparts (diagrams.md §8, dark column).
+DARK_FILL = {
+    "#333333": "#B0B0B0", "#DAE8FC": "#1F3A5F", "#E1D5E7": "#3B2A4F", "#FFF2CC": "#4A3F12",
+    "#D5E8D4": "#1E4024", "#FFE6CC": "#4A3215", "#B0E3E6": "#0F3D40", "#F5F5F5": "#2B2B2B",
+    "#A9DFBF": "#1B4D2E", "#F8CECC": "#5C2323", "#FFF9DB": "#3D3820", "#E8F5E9": "#1B3A24",
+    "#FDECEA": "#4A2020", "#FFFFFF": "#1E1E1E", "#1E8449": "#4CAF6E", "#B85450": "#E57373",
+    "#000000": "#B0B0B0",
+}
+DARK_STROKE = {
+    "#333333": "#B0B0B0", "#6C8EBF": "#6C9BD2", "#9673A6": "#B39DDB", "#D6B656": "#E0C35A",
+    "#82B366": "#7BC47F", "#D79B00": "#F0A040", "#0E8088": "#4FC3C9", "#666666": "#9E9E9E",
+    "#1E8449": "#4CAF6E", "#B85450": "#E57373", "#000000": "#B0B0B0",
+}
+DARK_TEXT = {"#1A1A1A": "#E8E8E8", "#000000": "#E8E8E8", "#FFFFFF": "#1A1A1A"}
+DARK_BACKGROUND = "#1E1E1E"
 DOCS_DIR = "docs"
 
 PRUNE_DIRS = {
@@ -163,6 +182,7 @@ def cmd_meta(args):
         "user": git(repo, "config", "user.name", check=False).strip() or "unknown",
         "template_version": TEMPLATE_VERSION,
         "humanizer_version": HUMANIZER_VERSION,
+        "diagram_version": DIAGRAM_VERSION,
     })
 
 
@@ -310,6 +330,8 @@ def cmd_drift(args):
         "template_changed": state.get("template_version") != TEMPLATE_VERSION,
         "humanizer_version_current": HUMANIZER_VERSION,
         "humanizer_changed": state.get("humanizer_version") != HUMANIZER_VERSION,
+        "diagram_version_current": DIAGRAM_VERSION,
+        "diagram_changed": state.get("diagram_version") != DIAGRAM_VERSION,
         "apps": {},
         "missing_app_state": [],
         "new_app_candidates": [],
@@ -427,10 +449,12 @@ def _diagrams_in(text):
     found = []
     for image in IMAGE_RE.findall(text):
         name = Path(image).name
-        found.append(("sequence" if ".seq." in name else "flowchart" if ".flow." in name else "other", image))
+        kind = "sequence" if ".seq." in name else "flowchart" if ".flow." in name else "state" if ".state." in name else "other"
+        found.append((kind, image))
     for body in MERMAID_BLOCK_RE.findall(text):
         first = next((l.strip() for l in body.splitlines() if l.strip()), "")
-        kind = "sequence" if first.startswith("sequenceDiagram") else "flowchart" if first.startswith(("flowchart", "graph")) else "other"
+        kind = ("sequence" if first.startswith("sequenceDiagram") else "flowchart" if first.startswith(("flowchart", "graph"))
+                else "state" if first.startswith("stateDiagram") else "other")
         found.append((kind, body))
     return found
 
@@ -466,8 +490,8 @@ def _drawio_problems(path):
         failures.append(("diagram-no-color", "fewer than 2 fill colors"))
     if not re.search(r'value="[^"]*legend', xml, re.I):
         failures.append(("diagram-no-legend", "no Legend box"))
-    if not re.search(r'background="#(?:fff|ffffff)"', xml, re.I):
-        warnings.append("white page background not set")
+    if 'id="docgen-theme"' not in _read(path, 20_000_000):
+        warnings.append("diagram theme not applied yet (docs_tool.py svg-theme)")
     return failures, warnings
 
 
@@ -493,7 +517,8 @@ def cmd_validate(args):
             fail(app_state.get("docs", {}).get(kind, "?"), 0, "doc-missing", "%s doc not found" % kind)
             continue
         all_ids = {sid for d in doc_list for _, sid in d.anchors}
-        for required in REQUIRED_SECTIONS[prefix]:
+        required_ids = REQUIRED_SECTIONS[prefix] + (["state-machine"] if app_state.get("fsm") and app_state.get("state_machines") else [])
+        for required in required_ids:
             if required not in all_ids:
                 fail(doc_list[0].rel, 0, "section-missing", "required section '%s' has no anchor" % required)
         full_text = "\n".join("\n".join(d.lines) for d in doc_list)
@@ -510,6 +535,17 @@ def cmd_validate(args):
                 missing = {"flowchart", "sequence"} - {kind for kind, _ in _diagrams_in(text)}
                 if missing:
                     fail(doc_list[0].rel, 0, "diagram-missing", "section '%s' has no %s" % (sid, " or ".join(sorted(missing))))
+
+        for machine in app_state.get("state_machines", []) if app_state.get("fsm") else []:
+            sid = "state-machine/%s" % machine.get("id")
+            text = next((d.section_text(sid) for d in doc_list if d.section_text(sid) is not None), None)
+            if text is None:
+                fail(doc_list[0].rel, 0, "fsm-section-missing", "state machine '%s' has no section" % machine.get("id"))
+                continue
+            if "state" not in {kind for kind, _ in _diagrams_in(text)}:
+                fail(doc_list[0].rel, 0, "diagram-missing", "section '%s' has no state diagram" % sid)
+            if prefix == "dev" and any(st.get("inferred") for st in machine.get("states", [])) and "**Unverified:**" not in text:
+                fail(doc_list[0].rel, 0, "fsm-unverified", "'%s' has inferred state names but no Unverified mark" % sid)
 
         for sid, minimum in DIAGRAM_SECTIONS[prefix].items():
             text = next((d.section_text(sid) for d in doc_list if d.section_text(sid) is not None), None)
@@ -575,6 +611,15 @@ def cmd_validate(args):
                             continue
                         fail(doc.rel, i, "secret-pattern", "possible %s (%s…)" % (name, secret[:3]))
 
+    for machine in app_state.get("state_machines", []) if app_state.get("fsm") else []:
+        values = {str(st.get("value")) for st in machine.get("states", [])}
+        transitions = machine.get("transitions", [])
+        if len(values) < 3 or len(transitions) < 3:
+            fail(args.app_state, 0, "fsm-threshold", "'%s' has %d states / %d transitions (needs 3 / 3)" % (machine.get("id"), len(values), len(transitions)))
+        for t in transitions:
+            if str(t.get("from")) not in values or str(t.get("to")) not in values:
+                fail(args.app_state, 0, "fsm-transition", "'%s' transition %s → %s uses an unknown state" % (machine.get("id"), t.get("from"), t.get("to")))
+
     ids = [f["id"] for f in app_state.get("flows", [])]
     duplicates = sorted({i for i in ids if ids.count(i) > 1})
     if duplicates:
@@ -586,6 +631,63 @@ def cmd_validate(args):
                "stats": {"flows": len(ids), "important": sum(1 for f in app_state.get("flows", []) if f.get("important")),
                          "sections": len(sections)}}
     emit(payload, 0 if not failures else 1)
+
+
+# ---------------------------------------------------------------- svg-theme
+
+LIGHT_DARK_RE = re.compile(r"light-dark\(\s*((?:[^(),]|\([^()]*\))+?)\s*,\s*((?:[^(),]|\([^()]*\))+?)\s*\)")
+THEME_STYLE_RE = re.compile(r'<style id="docgen-theme"[^>]*>.*?</style>', re.S)
+SVG_OPEN_RE = re.compile(r"<svg\b[^>]*>")
+
+
+def _rgb(hex_color):
+    value = hex_color.lstrip("#")
+    return "rgb(%d, %d, %d)" % tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _theme_css(mode):
+    """CSS appended to each diagram: light card always; dark palette only in adaptive mode."""
+    css = [":root { background-color: #FFFFFF; color-scheme: light; }"]
+    if mode != "adaptive":
+        return "\n".join(css)
+    rules = [":root { background-color: %s !important; }" % DARK_BACKGROUND]
+    for light, dark in DARK_FILL.items():
+        rules.append('[fill="%s" i], [fill="%s"] { fill: %s !important; }' % (light, _rgb(light), dark))
+        rules.append('[style*="background-color: %s" i], [style*="background-color: %s"] { background-color: %s !important; }'
+                     % (light, _rgb(light), dark if light != "#FFFFFF" else DARK_BACKGROUND))
+    for light, dark in DARK_STROKE.items():
+        rules.append('[stroke="%s" i], [stroke="%s"] { stroke: %s !important; }' % (light, _rgb(light), dark))
+    for light, dark in DARK_TEXT.items():
+        # "; color:" / leading "color:" so background-color never matches
+        rules.append('[style^="color: %s" i], [style*="; color: %s" i], [style^="color: %s"], [style*="; color: %s"] { color: %s !important; }'
+                     % (light, light, _rgb(light), _rgb(light), dark))
+    return "\n".join(css + ["@media (prefers-color-scheme: dark) {"] + ["  " + r for r in rules] + ["}"])
+
+
+def apply_theme(svg_text, mode):
+    """Return svg_text with draw.io's own light-dark() adaptation removed and the docgen theme style set."""
+    text = LIGHT_DARK_RE.sub(lambda m: m.group(1), svg_text)
+    text = text.replace("color-scheme: light dark", "color-scheme: light")
+    text = THEME_STYLE_RE.sub("", text)
+    opening = SVG_OPEN_RE.search(text)
+    if not opening:
+        raise ValueError("not an SVG")
+    style = '<style id="docgen-theme" data-mode="%s">\n%s\n</style>' % (mode, _theme_css(mode))
+    return text[:opening.end()] + style + text[opening.end():]
+
+
+def cmd_svg_theme(args):
+    repo = Path(args.repo).resolve()
+    state_path = repo / DOCS_DIR / ".docgen" / "state.json"
+    state = load_json(state_path) if state_path.exists() else {}
+    mode = args.mode or state.get("docmost", {}).get("diagram_theme") or "adaptive"
+    apps = [args.app] if args.app else sorted(state.get("apps", {}))
+    done = []
+    for app_id in apps:
+        for svg in sorted((repo / DOCS_DIR / app_id / "diagrams").glob("*.drawio.svg")):
+            svg.write_text(apply_theme(svg.read_text(encoding="utf-8"), mode), encoding="utf-8")
+            done.append(svg.relative_to(repo).as_posix())
+    emit({"mode": mode, "themed": len(done), "files": done})
 
 
 # ---------------------------------------------------------------- sync
@@ -732,6 +834,8 @@ def cmd_sync_record(args):
         docmost["root_url"] = args.root_url
     if args.method:
         docmost["method"] = args.method
+    if args.diagram_theme:
+        docmost["diagram_theme"] = args.diagram_theme
     if args.key:
         page = docmost.setdefault("pages", {}).setdefault(args.key, {})
         if args.url:
@@ -767,9 +871,14 @@ def main():
     p.add_argument("--content-hash")
     p.add_argument("--root-url")
     p.add_argument("--method")
+    p.add_argument("--diagram-theme", choices=["adaptive", "light"])
+    p = sub.add_parser("svg-theme")
+    p.add_argument("--repo", default=".")
+    p.add_argument("--app")
+    p.add_argument("--mode", choices=["adaptive", "light"])
     args = parser.parse_args()
     handlers = {"meta": cmd_meta, "detect": cmd_detect, "author": cmd_author, "drift": cmd_drift,
-                "validate": cmd_validate, "sync-plan": cmd_sync_plan, "sync-record": cmd_sync_record}
+                "validate": cmd_validate, "svg-theme": cmd_svg_theme, "sync-plan": cmd_sync_plan, "sync-record": cmd_sync_record}
     try:
         handlers[args.cmd](args)
     except (RuntimeError, OSError, KeyError, ValueError) as exc:

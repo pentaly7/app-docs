@@ -45,8 +45,20 @@ The paste script assumes two things about this Docmost version: pasted Markdown 
    - `leftover_placeholders` is 0
    - every image is `pasted`, and `img_elements` ≥ the number of images
    - a screenshot shows Mermaid blocks rendered as diagrams
-3. All good → `TOOL sync-record --repo REPO --method paste-markdown`, record the page (section 4, step 4), and continue.
+3. All good → `TOOL sync-record --repo REPO --method paste-markdown`, record the page (section 4, step 4), and continue with the theme check below.
 4. Anything failed → stop. Show the user the screenshot and what failed. Don't improvise another method that might change URLs or lose content. The usual fixes are a newer Docmost version (Markdown paste) or exporting diagrams as PNG. Decide with the user.
+
+### Diagram theme check (first sync, or when `docmost.diagram_theme` is not set)
+
+Diagrams carry a light and a dark palette and switch by the viewer's color scheme. Check that they follow **Docmost's own theme toggle**:
+
+1. Open a synced page that has a `.drawio.svg` diagram. Note which Docmost theme is active now.
+2. Take a screenshot of the diagram. Switch Docmost's theme with its own toggle (find it with `find`/`read_page`, usually in the user or appearance menu), wait a second, and take another screenshot.
+3. The diagram's background and shape colors changed with the page → `TOOL sync-record --repo REPO --diagram-theme adaptive`.
+4. The page changed but the diagram didn't → images don't receive Docmost's toggle in this browser. Switch every diagram to the always-light palette: `TOOL svg-theme --repo REPO --mode light`, then `TOOL sync-record --repo REPO --diagram-theme light`, then run `TOOL sync-plan --repo REPO` again (every page with a diagram is now `changed`) and continue with the new plan. Tell the user the diagrams in `docs/` changed and need committing.
+5. Switch Docmost back to the theme the user had.
+
+Pages without draw.io diagrams (Mermaid only) skip this check, because Docmost renders Mermaid itself.
 
 ## 4. Sync each page with `changed: true`, in plan order
 

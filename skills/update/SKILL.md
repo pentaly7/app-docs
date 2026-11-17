@@ -1,7 +1,7 @@
 ---
 name: update
-description: Report drift between the existing app docs in /docs and the current code, then fix only the affected sections (new flows added, removed flows marked, renamed files followed). Only touches apps that are already documented; use generate to document new apps. The operator guide is humanized with the humanizer-indonesia skill. Add "drawio" (or run the draw.io skill first) to redraw changed diagrams with draw.io.
-argument-hint: "[drawio]"
+description: Report drift between the existing app docs in /docs and the current code, then fix only the affected sections (new flows added, removed flows marked, renamed files followed). Only touches apps that are already documented; use generate to document new apps. The operator guide is humanized with the humanizer-indonesia skill. Add "drawio" (or run the draw.io skill first) to redraw changed diagrams with draw.io, and "fsm" to add state machine sections to every documented app (remembered for later runs).
+argument-hint: "[drawio] [fsm]"
 disable-model-invocation: true
 ---
 
@@ -17,7 +17,7 @@ The narrow version of `generate`: it never creates docs for apps that aren't doc
 
 2. No `docs/.docgen/state.json` → tell the user to run `/app-docs:generate` first, and stop.
 
-3. Preflight, diagram mode and humanizer (pipeline §2–3).
+3. Preflight, diagram mode, layout engine, `fsm` and humanizer (pipeline §2–3). In draw.io mode without a layout engine, stop here with the install instructions.
 
 4. Run `TOOL drift --repo REPO` and show the **drift report** first, compact:
 
@@ -30,6 +30,8 @@ The narrow version of `generate`: it never creates docs for apps that aren't doc
    - `template_changed` → say so. Every documented app gets regenerated (update mode, "Template changed: yes"), and `template_version` is set to current at the end.
    - `missing_app_state` → mention them and suggest generate. Don't bootstrap them here.
    - Apps whose stage isn't `done` → resume them per the pipeline table.
+   - `diagram_changed` → redraw every app's diagrams (stage `redraw`), then set `diagram_version` to current.
+   - Apps with `fsm` newly turned on by this run → update with "FSM newly enabled: yes".
    - `humanizer_changed` → re-humanize every operator guide (stage `fixed`), then set `humanizer_version` to current.
 
 5. For each app with stale sections, run the update branch of the pipeline: app-documenter `update` → goldfish-reviewer limited to the changed sections → app-documenter `fix` → operator-humanizer on the changed operator sections → validate. Up to 3 apps in parallel, `state.json` written after every stage change.

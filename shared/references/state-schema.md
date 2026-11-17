@@ -13,12 +13,14 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 {
   "template_version": 2,
   "humanizer_version": 2,
+  "diagram_version": 3,
   "split_all": false,
   "apps": {
     "payment-api": {
       "root": "services/payment-api",
       "language": "go",
       "kind": "backend",
+      "fsm": false,
       "stage": "done",
       "stage_updated_at": "2026-11-15T07:30:00+07:00"
     }
@@ -26,6 +28,7 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
   "docmost": {
     "root_url": "https://docmost.example.com/s/engineering",
     "method": "paste-markdown",
+    "diagram_theme": "adaptive",
     "pages": {
       "payment-api": { "url": "https://docmost.example.com/s/engineering/p/payment-api-x1y2" },
       "payment-api/operator-guide.md": {
@@ -41,6 +44,9 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 
 - `kind`: `backend` | `frontend` | `worker` | `cli` | `library`.
 - `stage` (per-app pipeline, used for resume): `pending` → `drafted` → `reviewed` → `fixed` → `done`. Also `failed`, with a `stage_error` string.
+- `diagram_version`: the diagram rules the diagrams were last drawn with. When it differs from the plugin's, the next run redraws the diagrams only (text untouched).
+- `apps.<id>.fsm`: state machine detection is on for this app. Set by running with `fsm`, kept for every later run.
+- `docmost.diagram_theme`: `adaptive` (light and dark palette, default) or `light` (always light), decided by the first sync's calibration.
 - `humanizer_version`: the humanizer rules the operator guides were last polished with. When it differs from the plugin's, the next run re-humanizes only.
 - `split_all`: true when the repo has more than 10 apps (conventions §10).
 - `docmost.pages` keys: the app ID for the app's container page; `<app-id>/operator` and `<app-id>/dev` for split-mode container pages; otherwise the doc file path relative to `docs/`. `docmost` stays `{}` until the first sync.
@@ -55,6 +61,8 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
   "framework": "gin",
   "kind": "backend",
   "split": false,
+  "fsm": false,
+  "state_machines": [],
   "docs": {
     "dev": "docs/payment-api/dev-guide.md",
     "operator": "docs/payment-api/operator-guide.md"
@@ -94,4 +102,5 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 - Section keys: `dev:<section-id>` or `op:<section-id>`, matching the anchors.
 - `files`: every repo-root-relative file whose change could make this section wrong. Drift detection depends on this list, so be generous. For `setup`, include the build files, config loader, `.env.example`, Dockerfile and CI files. `glossary` may be empty, since it's refreshed whenever any other section in the doc changes.
 - `diagram`: `drawio` | `mermaid` | `none`.
+- `fsm` / `state_machines`: see `state-machines.md` §7.
 - `status`: `active` | `removed`.

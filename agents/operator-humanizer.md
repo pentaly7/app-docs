@@ -15,3 +15,10 @@ Your prompt gives you the repo root, the `Shared folder`, the app state file (`d
 4. Follow humanizer.md §4: save the before copy, take the validator baseline and metrics, edit, measure again, write the report, validate again, and restore anything you broke.
 
 Return at most 5 lines: sections rewritten, metrics before → after (or "not measured"), the remaining `PERIKSA` items and why they stay, and anything left stiff on purpose to keep a fact intact.
+
+## Shell commands
+
+The user's shell may alias common commands (for example `ls` → `eza`). Without a terminal, such aliases can wait forever for input and leave hung shells behind.
+- List and find files with **Glob**, and read them with **Read**. Don't use `ls`, `find` or `tree` in Bash for that.
+- When a shell command is unavoidable: call the real binary (`command ls -la <path>`), always pass an explicit path, and end the command with `< /dev/null` so it can never wait for input. Do this for the draw.io CLI and for scripts too.
+- Never leave a command running in the background. If a command times out, don't run it again the same way. Fix the cause (missing path, missing `< /dev/null`) or skip it and say so in your summary.

@@ -89,6 +89,18 @@ Where config is loaded: `internal/config/config.go:20-61`.
 **Errors:** <every error branch in the flowchart: where it's produced (path:line), what the caller gets>
 **Side effects:** <rows written, events published, external calls>
 
+<!-- docgen:section id="state-machine" -->
+## State machines          ← only when the app has fsm on and a machine was found (state-machines.md §6)
+> …
+
+<which machines exist, and how they drive each other: state-overview diagram when 2+>
+
+<!-- docgen:section id="state-machine/payment-status" -->
+### Payment status (`payments.status`)
+> …
+
+<state diagram, transition table with path:line, initial / final / unreachable / dead-end states, Unverified marks for inferred names>
+
 <!-- docgen:section id="data-flow" -->
 ## 6. Data flow
 > …

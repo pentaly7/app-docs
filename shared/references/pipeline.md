@@ -5,7 +5,7 @@ You are the orchestrator. You never read application code yourself. You run the 
 ## Contents
 1. Paths
 2. Preflight
-3. Diagram mode and humanizer
+3. Diagram mode, layout, state machines, humanizer
 4. Per-app pipeline and resume
 5. Agent prompts
 6. Final report
@@ -24,8 +24,9 @@ You are the orchestrator. You never read application code yourself. You run the 
 2. Run `TOOL meta --repo REPO`. Keep the JSON (`sha`, `short_sha`, `branch`, `dirty`, `date`, `user`).
 3. If `dirty` is true, warn in one line ("Uncommitted changes: sections will be marked `+ uncommitted changes`") and continue.
 4. Make sure `docs/.docgen/.gitignore` exists and contains `.work/`.
+5. If the arguments contain `fsm`: set `fsm: true` for **every** app in `state.json` (and every app added in this run). It stays on for later runs without the word. An app that was `done` with `fsm` false gets the "FSM newly enabled" update (section 4).
 
-## 3. Diagram mode and humanizer
+## 3. Diagram mode, layout, state machines, humanizer
 
 ### Diagram mode
 
@@ -37,8 +38,21 @@ Then:
 1. Find the skill folder. Use the base directory if it was shown. Otherwise take the first folder with a `SKILL.md` among `~/.claude/skills/*drawio*`, `REPO/.claude/skills/*drawio*`, `~/.agents/skills/*drawio*`, `~/.claude/plugins/**/skills/*drawio*`.
 2. Check the CLI: `drawio --version`, `draw.io --version`, or `/Applications/draw.io.app/Contents/MacOS/draw.io --version`.
 3. If both checks pass, the mode is `drawio` with `DRAWIO_SKILL=<folder>`. Otherwise the mode is `mermaid`. Tell the user why in one line ("draw.io CLI not found — using Mermaid"), so they don't discover it halfway through the run.
+4. **Layout engine (draw.io mode only).** Diagrams are never placed by hand (diagrams.md §2), so one of these must work:
+   - `command dot -V < /dev/null` succeeds and `<DRAWIO_SKILL>/scripts/autolayout.py` exists → `LAYOUT=graphviz` (preferred: orthogonal routing).
+   - else the draw.io CLI version is 30 or newer → `LAYOUT=elk`.
+   - `<DRAWIO_SKILL>/scripts/seqlayout.py` must exist too, for sequence diagrams.
+
+   If any of this is missing, **stop before any agent runs** and say exactly what to install:
+   - Graphviz: `brew install graphviz` (macOS), `sudo apt install graphviz` (Debian/Ubuntu), `winget install graphviz` (Windows); or
+   - draw.io desktop v30+: https://github.com/jgraph/drawio-desktop/releases
+   - a newer draw.io skill (missing scripts): `git pull` in its folder.
 
 Without a draw.io request, the mode is `mermaid`, silently.
+
+### Diagram theme
+
+After an app's last writing step, run `TOOL svg-theme --repo REPO --app <id>`. It applies the light/dark palette to every `.drawio.svg` in the mode stored in `state.json → docmost.diagram_theme` (default `adaptive`, switched to `light` by the first sync if Docmost's toggle doesn't reach images). It's deterministic and costs nothing, so run it every time.
 
 ### Humanizer
 
@@ -57,13 +71,20 @@ Each app moves through stages, recorded in `state.json → apps.<id>.stage`. **W
 | `pending` (or `failed` before drafting) | app-documenter, mode `fresh` | `drafted` |
 | `drafted` | goldfish-reviewer | `reviewed` |
 | `reviewed` | app-documenter, mode `fix` | `fixed` |
-| `fixed` | operator-humanizer on the operator guide; then validate | `done` |
-| `done` + drift found | app-documenter `update` → goldfish-reviewer (changed sections only) → app-documenter `fix` → operator-humanizer (changed operator sections only) → validate | `done` |
+| `fixed` | operator-humanizer on the operator guide; then svg-theme, validate | `done` |
+| `done` + drift found, or FSM newly enabled | app-documenter `update` → goldfish-reviewer (changed sections only) → app-documenter `fix` → operator-humanizer (changed operator sections only) → svg-theme → validate | `done` |
+| `redraw` (set when only `diagram_changed`) | app-documenter `redraw` → svg-theme → validate | `done` |
 | `done` + humanizer version changed, code unchanged | operator-humanizer on the whole operator guide → validate | `done` |
+
+A `redraw` needs the same diagram mode the diagrams were made in. If the app's sections record `diagram: drawio` but this run is in Mermaid mode, skip the redraw for that app, keep `diagram_version` unchanged, and tell the user to rerun with `drawio`, instead of turning draw.io diagrams into Mermaid or marking them all outdated.
+
+`diagram_changed` and `humanizer_changed` can both be true: run `redraw` first, then the humanizer step. After every app finishes, set `diagram_version` / `humanizer_version` in `state.json` to the current values from `TOOL meta`.
+
+Waiting: an agent that takes a long time is normal, because tracing every branch and drawing diagrams is slow. **Wait for every agent to finish.** Never stop or cancel one, and never start a second agent for an app whose agent is still running, since both would write the same files. If you run any shell command yourself, use `command <tool> … < /dev/null` with explicit paths, so the user's shell aliases can't make it hang.
 
 Concurrency: run up to **3 apps at a time** (several Agent calls in one message), then the next batch. Stages within one app run in order. If an agent fails, record `stage: "failed"` and `stage_error`, move on to the other apps, and report the failure at the end. Never let one broken app block the rest.
 
-Validation (no LLM) after the humanizer step: `TOOL validate --repo REPO --app-state docs/.docgen/apps/<id>.json`. Failures **don't block writing**. Collect them for the report.
+Validation (no LLM) after svg-theme: `TOOL validate --repo REPO --app-state docs/.docgen/apps/<id>.json`. Failures **don't block writing**. Collect them for the report.
 
 Cost control: app-documenter and operator-humanizer run on Sonnet and goldfish-reviewer on Opus, as set in their agent files. Goldfish runs once per app per run. Fixes are applied without a second review. The validator is the safety net.
 
@@ -78,7 +99,8 @@ Repo root: <REPO>
 App: id=<id> root=<root> language=<lang> kind=<kind-guess>
 Shared folder: <SHARED>
 Meta: <meta JSON>
-Diagram mode: <drawio|mermaid>   Draw.io skill: <path or "none">
+Diagram mode: <drawio|mermaid>   Draw.io skill: <path or "none">   Layout: <graphviz|elk|n/a>
+FSM: <on|off>
 Split: <"forced (repo has >10 apps)" | "decide by conventions §10">
 Other apps in this repo (for cross-app links): <id → docs path, or "not documented yet">
 Write: docs per conventions, docs/.docgen/apps/<id>.json. Return a summary of 10 lines or fewer.
@@ -90,6 +112,14 @@ Mode: update
 (same header as fresh)
 Drift for this app: <JSON from TOOL drift for this app: stale sections + changed/renamed/deleted files>
 Template changed: <yes|no>   (yes → redo every section as in fresh mode, keep flow IDs)
+FSM newly enabled: <yes|no>   (yes → detect state machines and add their sections, state-machines.md)
+```
+
+**app-documenter, mode redraw**
+```
+Mode: redraw
+(same header as fresh)
+Redraw every diagram of this app under the current diagrams.md. Keep all text.
 ```
 
 **goldfish-reviewer**
@@ -128,7 +158,8 @@ payment-api  ✅ done   docs/payment-api/  (single, 23 flows, 9 full)
   Validator: 2 failures
     - dev:app-flow/refund: code ref services/payment-api/x.go:300 beyond end of file (210 lines)
   Goldfish: 11 findings → 10 fixed, 1 rejected (reason)
-  Diagrams: 9 flows × (flowchart + sequence), 6 sub-flows, structure, startup, data-flow
+  Diagrams: 9 flows × (flowchart + sequence), 6 sub-flows, structure, startup, data-flow · layout graphviz · theme adaptive
+  State machines: payment-status (5 states, 9 transitions, 1 inferred name), item-state
   Marks: 3 unverified · 1 contradiction · 2 security findings
   Fill manually: deployment, log location
 order-web    ❌ failed at drafted: <stage_error>

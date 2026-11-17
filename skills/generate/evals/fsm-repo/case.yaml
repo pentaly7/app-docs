@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: fsm-repo
+expected_outcome: |
+  With fsm on, every app records fsm true; each state field with at least 3 states and 3 transitions
+  becomes a state machine with a full transition table (from, to, trigger, guard, side effects, path:line),
+  a state diagram in both docs, and an overview diagram when machines drive each other. Numeric states
+  without names get an inferred name with an Unverified mark in the dev doc only. Transitions from cron
+  jobs, other apps or manual updates are drawn dashed. The operator guide explains each state and what to
+  check when a record is stuck in it. A second generate run without the word fsm keeps these sections.
+context:
+  scaffold_script: place-files.sh

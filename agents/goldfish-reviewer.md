@@ -30,9 +30,17 @@ Work section by section within the scope. Use each section's `files` from the ap
 - Dev guide: could a new developer find where to change behavior X using only this doc? Is it concise, with no filler and no restating?
 - Operator guide: could an operator who never reads code go from a symptom ("payments stuck in PENDING") to what to check? Does every error branch in the flowchart have a matching "Jika gagal" entry? Is "Jika gagal" actionable, never just "hubungi developer"? (Tone isn't your job here. The humanizer runs after you.)
 - Read `<Shared>/references/diagrams.md`. For each important flow, compare the **flowchart against the code**: list the branches the code can take (error exits, retries, timeouts, flags, fallbacks) and check each one is drawn, labelled with its condition, and ends at a terminal. A missing branch is a `high` accuracy finding. Check the sequence diagram's order and participants too.
+- If the app state has `fsm: true`: read `<Shared>/references/state-machines.md` and check each machine against the code. Grep every write to its field (assignments, `UPDATE … SET`, library calls, cron jobs, other apps' consumers). A write with no matching transition is a `high` accuracy finding. So is a transition the code can't make. Check that inferred state names carry an Unverified mark in the dev doc, and that the operator table says what to check when a record is stuck in each non-final state.
 - Do diagrams carry the detail in diagrams.md §7 (method and path, columns, payload fields, timeouts with keys), the colors and legend from §8, and step numbers matching the text? Are they readable (no overlaps, sub-flows used instead of one unreadable diagram)? In drawio mode, open the `.drawio.svg` files; the embedded XML (`content` attribute) shows labels and styles.
 
 Skip pure style preferences. Every finding must name something a reader would get wrong or be unable to do.
+
+## Shell commands
+
+The user's shell may alias common commands (for example `ls` → `eza`). Without a terminal, such aliases can wait forever for input and leave hung shells behind.
+- List and find files with **Glob**, and read them with **Read**. Don't use `ls`, `find` or `tree` in Bash for that.
+- When a shell command is unavoidable: call the real binary (`command ls -la <path>`), always pass an explicit path, and end the command with `< /dev/null` so it can never wait for input. Do this for the draw.io CLI and for scripts too.
+- Never leave a command running in the background. If a command times out, don't run it again the same way. Fix the cause (missing path, missing `< /dev/null`) or skip it and say so in your summary.
 
 ## Output
 

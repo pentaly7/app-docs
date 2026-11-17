@@ -62,6 +62,9 @@ dev/06-data-flow.md  07-dev-notes.md  08-glossary.md
 operator/01-setup.md  02-how-it-works.md
 operator/03-app-flow/00-index.md  03-app-flow/<NN>-<flow-id>.md
 operator/04-data-flow.md  05-troubleshooting.md  06-glossary.md
+
+dev/05b-state-machine/00-index.md  05b-state-machine/<NN>-<machine-id>.md        # only with fsm
+operator/03b-state-machine/00-index.md  03b-state-machine/<NN>-<machine-id>.md   # only with fsm
 ```
 
 ## 3. Section anchors and IDs
@@ -77,6 +80,7 @@ Put an anchor comment on the line directly above every `##` and `###` heading th
 - Top-level IDs **[checked]**:
   - dev: `overview`, `structure`, `setup`, `startup`, `app-flow`, `data-flow`, `dev-notes`, `glossary`
   - operator: `setup`, `how-it-works`, `app-flow`, `data-flow`, `troubleshooting`, `glossary`
+  - both, only when the app has `fsm` on and a state machine was found: `state-machine` plus `state-machine/<machine-id>` per machine (`state-machines.md`)
 - A flow has the ID `app-flow/<flow-id>` in **both** docs.
 - `<flow-id>` is kebab-case and stable: `create-payment`, `consume-order-created`, `page-checkout`, `cron-daily-settlement`.
 

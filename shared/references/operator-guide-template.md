@@ -83,6 +83,18 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 **Tanda berhasil:** <row baru di tabel `payments` status `PENDING`, log `payment created`>
 **Jika gagal:** <gejala, penyebab yang paling mungkin, lalu apa yang diperiksa, untuk setiap cabang error di flowchart>
 
+<!-- docgen:section id="state-machine" -->
+## Status dan Perubahannya          ← hanya jika app memakai fsm dan state machine ditemukan (state-machines.md §6)
+> …
+
+<status apa saja yang ada dan bagaimana satu status memicu status lain>
+
+<!-- docgen:section id="state-machine/payment-status" -->
+### Status pembayaran (`payments.status`)
+> …
+
+<state diagram, tabel per status: artinya, pindah jika, jika tertahan periksa apa; cara mencari record yang tertahan>
+
 <!-- docgen:section id="data-flow" -->
 ## 4. Alur Data
 > …
