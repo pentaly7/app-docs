@@ -89,6 +89,7 @@ Template version 2 changes diagrams, the operator guide's voice and its sections
 
 ## Known limits
 
+- **Docmost page titles:** only the app's page carries the app name. Sub-pages drop it ("Panduan Operator", "Dev Guide"). The markdown files in GitLab keep their full H1.
 - **Docmost sync is UI automation.** The first sync runs a calibration (Markdown paste and SVG upload) and stops if your Docmost version doesn't support them. A Docmost UI upgrade can break it.
 - Mermaid mode doesn't get the dark palette: Docmost renders Mermaid itself.
 - Diagrams in Docmost are images, scaled to the page width. Large flowcharts are split into sub-flow files so each stays readable. Edit them through the `.drawio.svg` in GitLab, then sync.

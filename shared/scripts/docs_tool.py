@@ -767,6 +767,29 @@ def _title(path, fallback):
     return fallback
 
 
+TITLE_SEPARATORS = (": ", " — ", " – ", " - ")
+
+
+def _app_name(repo, app_state, app_id):
+    """Display name from the dev doc's H1 ("Payment API — Dev Guide" → "Payment API"), else the app id."""
+    target = repo / app_state["docs"]["dev"]
+    first = target if target.is_file() else next(iter(sorted(target.rglob("*.md"))), None) if target.is_dir() else None
+    heading = _title(first, "") if first else ""
+    for sep in TITLE_SEPARATORS:
+        if sep in heading:
+            return heading.split(sep, 1)[0].strip() or app_id
+    return app_id
+
+
+def _subpage_title(title, app_name):
+    """Only the app's own page carries the app name in Docmost; sub-pages drop an "<app name><sep>" prefix."""
+    for sep in TITLE_SEPARATORS:
+        prefix = app_name + sep
+        if title.lower().startswith(prefix.lower()) and title[len(prefix):].strip():
+            return title[len(prefix):].strip()
+    return title
+
+
 def cmd_sync_plan(args):
     repo = Path(args.repo).resolve()
     state = load_json(repo / DOCS_DIR / ".docgen" / "state.json")
@@ -777,33 +800,32 @@ def cmd_sync_plan(args):
     pages = []
 
     def add(key, parent, title, source=None):
-        entry = {"key": key, "parent": parent, "title": title, "existing_url": synced.get(key, {}).get("url")}
-        if source:
-            text, images = _prepare_markdown(source)
-            digest = hashlib.sha256(text.encode())
-            for image in images:
-                digest.update(Path(image).read_bytes() if Path(image).is_file() else b"missing")
-            name = key.replace("/", "__")
-            prepared = work / (name if name.endswith(".md") else name + ".md")
-            prepared.write_text(text, encoding="utf-8")
-            paste_js = prepared.with_suffix(".paste.js")
-            paste_js.write_text(_paste_js(title, text, images), encoding="utf-8")
-            entry.update({"prepared_file": str(prepared), "paste_js": str(paste_js), "images": images,
-                          "content_hash": "sha256:" + digest.hexdigest()})
-            entry["changed"] = synced.get(key, {}).get("content_hash") != entry["content_hash"]
-        else:
-            entry["changed"] = entry["existing_url"] is None
+        # Title is part of the hash, so a renamed page is re-synced even when its body didn't change.
+        text, images = _prepare_markdown(source) if source else ("", [])
+        digest = hashlib.sha256((title + "\n" + text).encode())
+        for image in images:
+            digest.update(Path(image).read_bytes() if Path(image).is_file() else b"missing")
+        name = key.replace("/", "__")
+        prepared = work / (name if name.endswith(".md") else name + ".md")
+        prepared.write_text(text, encoding="utf-8")
+        paste_js = prepared.with_suffix(".paste.js")
+        paste_js.write_text(_paste_js(title, text, images), encoding="utf-8")
+        entry = {"key": key, "parent": parent, "title": title, "existing_url": synced.get(key, {}).get("url"),
+                 "container": source is None, "prepared_file": str(prepared), "paste_js": str(paste_js),
+                 "images": images, "content_hash": "sha256:" + digest.hexdigest()}
+        entry["changed"] = synced.get(key, {}).get("content_hash") != entry["content_hash"]
         pages.append(entry)
 
     for app_id, app in sorted(state.get("apps", {}).items()):
         if app.get("stage") != "done":
             continue
         app_state = load_json(repo / DOCS_DIR / ".docgen" / "apps" / ("%s.json" % app_id))
-        add(app_id, None, app_id)
+        app_name = _app_name(repo, app_state, app_id)
+        add(app_id, None, app_name)
         for kind, label in (("operator", "Operator Guide"), ("dev", "Dev Doc")):
             target = repo / app_state["docs"][kind]
             if target.is_file():
-                add(target.relative_to(repo / DOCS_DIR).as_posix(), app_id, _title(target, label), target)
+                add(target.relative_to(repo / DOCS_DIR).as_posix(), app_id, _subpage_title(_title(target, label), app_name), target)
                 continue
             container = "%s/%s" % (app_id, kind)
             add(container, app_id, label)
@@ -818,7 +840,7 @@ def cmd_sync_plan(args):
             for md in sorted(target.rglob("*.md")):
                 is_index = md.name == "00-index.md" and md.parent != target
                 parent = folder_page(md.parent.parent if is_index else md.parent)
-                add(md.relative_to(repo / DOCS_DIR).as_posix(), parent, _title(md, md.stem), md)
+                add(md.relative_to(repo / DOCS_DIR).as_posix(), parent, _subpage_title(_title(md, md.stem), app_name), md)
     emit({"root_url": state.get("docmost", {}).get("root_url"),
           "method": state.get("docmost", {}).get("method"),
           "pages": pages,

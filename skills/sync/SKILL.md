@@ -19,8 +19,9 @@ Docmost community edition has no API keys or MCP here, so this drives the Docmos
 2. URL: if the arguments contain a URL, save it with `TOOL sync-record --repo REPO --root-url <url>`. If none was given and state has no `docmost.root_url`, ask for the Docmost space (or parent page) URL, and stop until they answer.
 3. Run `TOOL sync-plan --repo REPO`. It lists every page in parent-before-child order, with:
    - `key`, `parent` (a key or null, where null means directly under the root URL), `title`, `existing_url`, `changed`
-   - for content pages: `paste_js` (a ready-made browser script that sets the title and body and uploads diagrams) and `content_hash`
-   - container pages (an app page, "Operator Guide"/"Dev Doc" in split mode) have no `paste_js`. Create them with just the title.
+   - `paste_js` (a ready-made browser script that sets the title and body and uploads diagrams) and `content_hash`, which covers the title too, so renamed pages count as `changed`
+   - `container: true` for pages with no body of their own (the app page, "Operator Guide"/"Dev Doc" in split mode). Their `paste_js` only sets the title.
+   - Titles: only the app's own page carries the app name. Every sub-page title has the app name removed ("Panduan Operator", "Dev Guide", "Overview"). Use `title` exactly as the plan gives it.
    Only apps at stage `done` are included.
 4. `to_sync` is 0 → say "Docmost is up to date" and stop. Otherwise tell the user how many pages will be created or updated, and that Chrome must stay open and logged in to Docmost.
 
@@ -66,12 +67,10 @@ Pages without draw.io diagrams (Mermaid only) skip this check, because Docmost r
    - `existing_url` set → navigate to it. If it's gone (404), treat the page as new.
    - New → open the parent page (its URL from state, or `root_url` for `parent: null`). Create a child page with Docmost's "add subpage" control. Use `find`/`read_page` to locate it, since UI labels vary by version. Wait until the new page's editor shows.
 2. **Write content**
-   - Container page: type the title into the title field, then leave the body empty.
-   - Content page: Read the page's `paste_js` file and pass its full contents to `javascript_tool`. Check the returned JSON as in calibration (`ok`, `literal_markdown`, `leftover_placeholders`, images).
+   - Read the page's `paste_js` file and pass its full contents to `javascript_tool`. Check the returned JSON as in calibration (`ok`, `literal_markdown`, `leftover_placeholders`, images). For a container page, only check that the title is right.
 3. Wait about 3 seconds for Docmost to autosave, then check the page text once with `get_page_text`.
 4. **Record immediately**, so a failure halfway through doesn't lose the mapping:
-   `TOOL sync-record --repo REPO --key <key> --url <current page URL> [--content-hash <content_hash>]`
-   (no `--content-hash` for container pages).
+   `TOOL sync-record --repo REPO --key <key> --url <current page URL> --content-hash <content_hash>`
 5. On failure: record nothing for that page, note it, and continue with the next page. Skip the children of a page that failed to create.
 
 ## 5. Report
