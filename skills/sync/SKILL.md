@@ -1,6 +1,6 @@
 ---
 name: sync
-description: One-way sync of the app docs in /docs to Docmost (community edition, no API) by driving the user's logged-in Chrome through Claude in Chrome. Creates the Space › App › Operator Guide / Dev Doc page tree the first time, then updates the same pages in place on later runs, so URLs stay stable. Pass the Docmost space or parent-page URL on the first run; it's saved for later runs.
+description: One-way sync of the app docs in /docs to Docmost (community edition, no API) by driving the user's logged-in Chrome through Claude in Chrome. Creates the Space › App › User Guide / Dev Guide page tree the first time, then updates the same pages in place on later runs, so URLs stay stable. Pass the Docmost space or parent-page URL on the first run; it's saved for later runs.
 argument-hint: "[docmost-url]"
 disable-model-invocation: true
 ---
@@ -17,11 +17,11 @@ Docmost community edition has no API keys or MCP here, so this drives the Docmos
 
 1. `docs/.docgen/state.json` missing → tell the user to run `/app-docs:generate` first, and stop.
 2. URL: if the arguments contain a URL, save it with `TOOL sync-record --repo REPO --root-url <url>`. If none was given and state has no `docmost.root_url`, ask for the Docmost space (or parent page) URL, and stop until they answer.
-3. Run `TOOL sync-plan --repo REPO`. It lists every page in parent-before-child order, with:
+3. Run `TOOL migrate --repo REPO` (brings older docs up to current titles), then `TOOL sync-plan --repo REPO`. It lists every page in parent-before-child order, with:
    - `key`, `parent` (a key or null, where null means directly under the root URL), `title`, `existing_url`, `changed`
    - `paste_js` (a ready-made browser script that sets the title and body and uploads diagrams) and `content_hash`, which covers the title too, so renamed pages count as `changed`
-   - `container: true` for pages with no body of their own (the app page, "Operator Guide"/"Dev Doc" in split mode). Their `paste_js` only sets the title.
-   - Titles: only the app's own page carries the app name. Every sub-page title has the app name removed ("Panduan Operator", "Dev Guide", "Overview"). Use `title` exactly as the plan gives it.
+   - `container: true` for pages with no body of their own (the app page, "User Guide"/"Dev Guide" in split mode). Their `paste_js` only sets the title.
+   - Titles: only the app's own page carries the app name. Every sub-page title has the app name removed ("User Guide", "Dev Guide", "Overview"). Use `title` exactly as the plan gives it.
    Only apps at stage `done` are included.
 4. `to_sync` is 0 → say "Docmost is up to date" and stop. Otherwise tell the user how many pages will be created or updated, and that Chrome must stay open and logged in to Docmost.
 

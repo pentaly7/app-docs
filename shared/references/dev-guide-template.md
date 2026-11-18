@@ -105,7 +105,7 @@ Where config is loaded: `internal/config/config.go:20-61`.
 ## 6. Data flow
 > …
 
-<Diagram of where data comes from, where it's stored and where it goes (DFD). Then a table of datastores/queues: name, owner (this app or other), what is read/written, by which flows. Include data lifecycle: retention, soft delete, archival jobs if any.>
+<Diagram of where data comes from, where it's stored and where it goes (DFD). Then a table of every place data lives: name, **storage type** (database / file storage / object storage / cache / queue / other) and where exactly (engine, path, bucket), owner (this app or other), what is read/written (full field lists go here), by which flows. Include data lifecycle: retention, soft delete, archival jobs if any.>
 
 <!-- docgen:section id="dev-notes" -->
 ## 7. Dev notes

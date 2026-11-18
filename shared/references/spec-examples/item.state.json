@@ -1,0 +1,7 @@
+{"type":"state","title":"Item state","nodes":[
+ {"id":"i","kind":"initial"},{"id":"s0","kind":"state","label":"NEW (0)"},{"id":"s1","kind":"state","label":"ACTIVE (1)"},
+ {"id":"s2","kind":"ok","label":"USED (2)"},{"id":"s3","kind":"err","label":"EXPIRED (3)"},{"id":"f","kind":"final"},
+ {"id":"n1","kind":"note","note_for":"s1","label":"1 = probably ACTIVE (inferred, see dev notes)"}],
+ "edges":[{"from":"i","to":"s0"},{"from":"s0","to":"s1","label":"POST /activate [paid]"},{"from":"s1","to":"s2","label":"POST /use [not_today = false] / log"},
+ {"from":"s1","to":"s3","kind":"external","label":"⏱ cron expire (24h)"},{"from":"s0","to":"s3","kind":"external","label":"✋ manual DB update"},
+ {"from":"s2","to":"f"},{"from":"s3","to":"f"}]}

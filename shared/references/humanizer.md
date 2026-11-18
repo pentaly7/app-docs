@@ -42,7 +42,7 @@ These stay byte-for-byte identical, except where noted:
 - Table structure. Only the prose inside cells may change.
 - Facts: numbers, units, durations, status codes, names of keys, tables, queues, endpoints and flows (flow labels must stay verbatim), the order of steps, and every "Jika gagal" cause and check
 - The Removed / Diagram-outdated marks
-- **Exception:** an em or en dash in a title, image caption or placeholder may be replaced with a colon or comma (`# Payment API: Panduan Operator`).
+- **Exception:** an em or en dash in a title, image caption or placeholder may be replaced with a colon or comma (`# Payment API: User Guide`).
 
 If a sentence can't be made natural without changing a fact, keep the fact and leave the sentence a bit stiff.
 

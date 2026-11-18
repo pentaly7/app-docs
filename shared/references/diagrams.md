@@ -1,4 +1,4 @@
-# Diagrams (diagram version 3)
+# Diagrams (diagram version 5)
 
 Diagrams are the first thing readers look at, so they carry the detail. They are **colorful, complete and exact**: every branch the code can take, real names, real values. The validator checks the parts marked **[checked]**.
 
@@ -15,6 +15,7 @@ Diagrams are the first thing readers look at, so they carry the detail. They are
 10. Mixed docs on update
 11. Mermaid version
 12. State diagrams (only with `fsm`)
+13. Diagram spec format (input of `diagram_layout.py`)
 
 ---
 
@@ -35,20 +36,25 @@ Every cell above is required **[checked]**. Both docs use the **same files**, wi
 
 The orchestrator gives you the mode and, in draw.io mode, the layout engine. Don't guess.
 
-**Overlapping lines and shapes come from hand-placed coordinates.** So in draw.io mode you never write `x`/`y` positions or edge waypoints for flowcharts, structure, startup, data-flow or state diagrams. You describe **nodes, edges, labels and styles**, and a layout engine places and routes them:
+**You never place shapes or route lines.** You write a small JSON **spec** of what is in the diagram (section 13): nodes, edges, which nodes form the happy path, notes, zones, sequence messages. The plugin's layout script places and routes everything with Graphviz and writes a styled, editable draw.io file:
 
-| Layout engine (from the orchestrator) | How |
-|---|---|
-| `graphviz` | Write the graph JSON that the draw.io skill's `scripts/autolayout.py` takes (see its SKILL.md for the format), then run it, e.g. `python3 <drawio-skill>/scripts/autolayout.py graph.json -o out.drawio < /dev/null`. It does placement and orthogonal routing. Use its `--tune` to pick the direction and `--group` for containers (the app container in structure diagrams). |
-| `elk` | Write the diagram as Mermaid (`flowchart` / `stateDiagram-v2`) and let the draw.io CLI (v30+) convert it into an arranged, editable `.drawio` file, as the draw.io skill describes. |
-| Sequence diagrams (either engine) | The draw.io skill's `scripts/seqlayout.py`. Never hand-place lifelines or messages. |
+```
+python3 <Shared>/scripts/diagram_layout.py docs/.docgen/.work/<diagram-id>.json -o docs/.docgen/.work/<diagram-id>.drawio --preview docs/.docgen/.work/<diagram-id>.preview.svg < /dev/null
+```
 
-After layout, you may change **styles and labels only** (apply section 8). Never move shapes or reroute edges by hand. If the result is hard to read, change the **structure** instead (shorter labels, a sub-flow file, a different direction via `--tune`) and run the layout again.
+What the script guarantees, so you don't have to:
+- **Flowcharts:** the happy path (`"spine": true`) is one straight vertical column. A decision's other branches leave **sideways** to an end point on the same row. Notes sit **left** of the shape they explain, joined by a dashed line. Error paths that continue to a later step (`"kind": "rejoin"`) run down **one shared channel** on the right instead of crossing the diagram.
+- **Data-flow / structure:** zones (Callers, the app, External systems, Storage) as labelled containers, top to bottom in the direction the data moves. Data going back to an earlier zone doesn't reorder them.
+- **Sequence:** one row per message, columns wide enough for every label, and a **numbered dark circle** at the start of every message, like Mermaid's `autonumber`.
+- **Labels:** every line label is moved along its own line to a spot that doesn't touch a shape, another label or another line. Sideways lines get room for their label.
+- **All:** the colors in section 8 and a legend of exactly the kinds used.
 
-- Export every diagram as an **editable** `.drawio.svg`: draw.io CLI `-x -f svg -e`, so the diagram XML stays inside the SVG **[checked]**. Keep `.drawio`, graph JSON and PNG previews in `docs/.docgen/.work/`.
-- Look at each rendered PNG before moving on. Look for duplicate edges (two edges between the same pair of nodes with the same label: keep one), cut-off labels, and branches that don't reach a terminal.
-- The orchestrator applies the light/dark theme to every `.drawio.svg` after you finish (section 8). Don't add your own dark-mode styling.
-- **mermaid** mode: fenced ` ```mermaid ` blocks in the markdown, identical in both docs. Mermaid lays itself out. Section 11 shows the colors.
+Then, in draw.io mode:
+1. Export the editable SVG with the draw.io CLI: `drawio -x -f svg -e -o docs/<app-id>/diagrams/<diagram-id>.drawio.svg docs/.docgen/.work/<diagram-id>.drawio < /dev/null` (the draw.io skill describes the CLI per platform). Keep the spec, `.drawio` and previews in `.work/`.
+2. Read the script's output: `label_overlaps` must be `0`. If it isn't, shorten the labels it points to (full detail goes in the table or steps under the diagram) and run it again. Then look at the rendered result (a PNG export, or the `--preview` SVG). If it's hard to read, change the **spec** (shorter labels, a sub-flow, `rejoin` instead of `error`, a note instead of a long diamond label) and run the script again. Never edit coordinates in the `.drawio` file.
+3. The orchestrator applies the light/dark theme to every `.drawio.svg` after you finish (section 8). Don't add your own dark-mode styling.
+
+**mermaid** mode: fenced ` ```mermaid ` blocks in the markdown, identical in both docs. Mermaid lays itself out. Section 11 shows the colors. The spec rules (spine, side exits, rejoin) still guide what you write, even though Mermaid can't enforce them.
 
 ## 3. Files and embedding
 
@@ -62,6 +68,7 @@ docs/<app-id>/diagrams/
   shared.<sub-id>.drawio.svg           # sub-flow reused by 2+ flows
   <flow-id>.seq.drawio.svg             # sequence diagram        [checked: ".seq." in name]
   <machine-id>.state.drawio.svg        # state diagram (fsm)     [checked: ".state." in name]
+  (specs, .drawio sources, previews)   → docs/.docgen/.work/
   state-overview.drawio.svg            # how machines drive each other (fsm, 2+ machines)
 ```
 
@@ -105,13 +112,13 @@ A sequence diagram shows **who calls whom, in order**, for the same flow. One pe
 - Messages: **synchronous call** = solid line, filled arrowhead. **Async message** (publish, enqueue, fire-and-forget) = solid line, open arrowhead. **Reply** = dashed line, open arrowhead. Error replies are red.
 - Label each message with its number and content: `3. INSERT payments (order_id, amount, status=PENDING)`, `5. POST /v2/charge {order_id, gross_amount}`, `6. 201 {transaction_id}`.
 - Use `alt` / `opt` / `loop` frames for the branches from the flowchart that involve other participants (timeout, retry loop, not found), each frame labelled with its condition.
-- Layout comes from the draw.io skill's `scripts/seqlayout.py` (section 2): every message gets its own row, so labels never sit on top of each other.
+- Layout comes from `diagram_layout.py` (section 2): every message gets its own row with a numbered circle where it starts. The numbers match the numbered steps in the text.
 
 ## 6. Structure, startup, data-flow
 
 - **Structure**: the app's components (handlers, services, workers, schedulers, repositories, caches, clients) and how they connect, plus everything outside the app it talks to. Group the app's components inside one container labelled with the app name. Arrows labelled with protocol and purpose (`HTTP JSON`, `gRPC`, `SQL`, `publishes order.created`).
 - **Startup**: flowchart from process start to "ready", in code order: config load and validation, logger, DI/wiring, connections (with retry/timeouts), migrations, workers/schedulers, server listen, readiness. Every fail-fast condition is an error terminal (`missing DB_DSN → exit 1`).
-- **Data-flow**: external entities (who sends/receives data), processes (this app's flows), stores (tables, caches, buckets) and queues. Each arrow is labelled with the data that moves (`payment {id, status}`) and the direction. Include retention/cleanup jobs if they exist.
+- **Data-flow**: the app's components with the data on the arrows, grouped into zones: `Callers` (first), the app, `External systems`, then **one zone per storage type** so the reader sees where data lands: `Database (<engine>)`, `File storage (<where>)`, `Object storage (<provider>)`, `Cache (<engine>)`, `Other storage`. Only zones that have something in them. Each storage node uses its storage kind (section 8) and its label names the actual thing: the table (`ISO_LOG (table)`), the path (`logs/app.YYYY-MM-DD.log`), the bucket and prefix (`s3://docs/uploads/`), the key pattern (`session:{id}`). The same storage zones are used in the structure diagram. Keep arrow labels **short** (a few words: `INSERT ISO_LOG row`, `POST inquiry / reply`) and give the full field lists in the table under the diagram. Long labels on arrows collide with each other. A two-way exchange is one edge with `"both": true`. Include retention/cleanup jobs if they exist.
 
 ## 7. Detail inside the diagram
 
@@ -144,7 +151,11 @@ Every diagram is colored by **component kind** and by **outcome**, and has a leg
 | Step in this app | rounded box | `rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontColor=#1A1A1A;` |
 | Sub-flow reference | predefined process | `shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontColor=#1A1A1A;fontStyle=1;` |
 | Decision | diamond | `rhombus;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontColor=#1A1A1A;` |
-| Datastore / cache | cylinder | `shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#1A1A1A;` |
+| Database (table, collection) — spec kind `db` | cylinder | `shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#1A1A1A;` |
+| File storage (local disk, NFS, SFTP) — `file` | folder | `shape=folder;tabWidth=46;tabHeight=12;tabPosition=left;fillColor=#F0E2C8;strokeColor=#A0844F;fontColor=#1A1A1A;` |
+| Object storage (S3, GCS, MinIO bucket) — `object` | bucket (trapezoid) | `shape=trapezoid;flipV=1;size=0.1;fillColor=#F2D7E9;strokeColor=#A65C8C;fontColor=#1A1A1A;` |
+| Cache / in-memory store (Redis, Memcached) — `cache` | hexagon | `shape=hexagon;size=0.08;fillColor=#E2EFDA;strokeColor=#548235;fontColor=#1A1A1A;` |
+| Other storage (search index, etc.) — `store` | dashed cylinder | `shape=cylinder3;dashed=1;fillColor=#EEF3EE;strokeColor=#7A8C7A;fontColor=#1A1A1A;` |
 | Queue / topic | parallelogram | `shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontColor=#1A1A1A;` |
 | Other internal app | rounded box | `rounded=1;whiteSpace=wrap;html=1;fillColor=#B0E3E6;strokeColor=#0E8088;fontColor=#1A1A1A;` |
 | External system | dashed box | `rounded=0;dashed=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontColor=#1A1A1A;` |
@@ -162,7 +173,11 @@ Dark palette applied by `svg-theme` (for reference; never draw with it):
 | Client / user | `#DAE8FC` / `#6C8EBF` | `#1F3A5F` / `#6C9BD2` |
 | Step in this app, sub-flow, state | `#E1D5E7` / `#9673A6` | `#3B2A4F` / `#B39DDB` |
 | Decision | `#FFF2CC` / `#D6B656` | `#4A3F12` / `#E0C35A` |
-| Datastore | `#D5E8D4` / `#82B366` | `#1E4024` / `#7BC47F` |
+| Database | `#D5E8D4` / `#82B366` | `#1E4024` / `#7BC47F` |
+| File storage | `#F0E2C8` / `#A0844F` | `#3D3220` / `#C9A86A` |
+| Object storage | `#F2D7E9` / `#A65C8C` | `#4A2440` / `#D58BBF` |
+| Cache | `#E2EFDA` / `#548235` | `#263A1C` / `#8FC26A` |
+| Other storage | `#EEF3EE` / `#7A8C7A` | `#2B332B` / `#A3B5A3` |
 | Queue / topic | `#FFE6CC` / `#D79B00` | `#4A3215` / `#F0A040` |
 | Other internal app | `#B0E3E6` / `#0E8088` | `#0F3D40` / `#4FC3C9` |
 | External system, frames | `#F5F5F5` / `#666666` | `#2B2B2B` / `#9E9E9E` |
@@ -181,7 +196,7 @@ Use **only** the colors in these tables. Any other color won't get a dark versio
 
 Sequence participants use the fill and stroke of their kind (`shape=umlLifeline;perimeter=lifelinePerimeter;…`). Frames (`shape=umlFrame`) are light grey `#F5F5F5`. Use `#E8F5E9` for a success branch frame and `#FDECEA` for an error branch frame.
 
-**Legend**: a bordered box (`fillColor=#FFFFFF;strokeColor=#666666;`) titled "Legend", with one small swatch and label for each kind and edge style **used in that diagram**, and nothing else. Add it **after** the layout run, placed outside the laid-out graph's bounding box (below it, aligned right), so the layout engine never routes edges through it.
+**Legend**: `diagram_layout.py` adds it below the diagram, with one swatch per node kind and edge kind **used in that diagram** (and the step-number circle in sequence diagrams). Don't draw your own.
 
 ## 9. Sub-flows instead of size limits
 
@@ -226,7 +241,7 @@ flowchart TD
 ```
 
 - `linkStyle <indexes> stroke:#B85450` colors error edges (indexes count links in order, starting at 0). `-.->` marks async edges.
-- Sequence diagrams: `participant` order as in section 5, `->>` sync, `-)` async, `-->>` reply. Wrap success/error alternatives in `rect rgb(232,245,233)` / `rect rgb(253,236,234)` inside `alt` blocks.
+- Sequence diagrams: start with `autonumber` (numbered circles, same as draw.io mode); `participant` order as in section 5, `->>` sync, `-)` async, `-->>` reply. Wrap success/error alternatives in `rect rgb(232,245,233)` / `rect rgb(253,236,234)` inside `alt` blocks.
 - Mermaid has no real legend. Add one line under the diagram: `Legend: purple = this app · green cylinder = datastore · orange = queue · grey dashed = external · red = error path`.
 - Pitfalls: quote labels with spaces or symbols; don't use `end` as a node id; `DB[("label")]` for cylinders.
 
@@ -240,5 +255,64 @@ Drawn from the transition table in `state-machines.md`. One per state machine, p
 - **Transitions from outside the app's request flow** are dashed, with the source in the label: `⏱ cron expire-orders (24h)`, `↪ order-service`, `✋ manual DB update`.
 - A value marked Unverified in the dev doc is drawn as `? (3)` with the inferred name in the Note: `probably REFUNDED, see dev notes`.
 - **Overview** (`state-overview`): one container per machine, with only the transitions where a change in one machine triggers a change in another, labelled with the trigger.
-- Layout as in section 2 (`stateDiagram-v2` for ELK, graph JSON for Graphviz). Mermaid mode: `stateDiagram-v2` with `classDef` colors, `[*]` for initial and final pseudo-states.
+- Layout as in section 2 (spec `"type": "state"`). Mermaid mode: `stateDiagram-v2` with `classDef` colors, `[*]` for initial and final pseudo-states.
+
+## 13. Diagram spec format (input of `diagram_layout.py`)
+
+One JSON file per diagram. Full worked examples (a real flowchart with notes and rejoins, a zoned data-flow, a sequence with frames, a state machine) are in `references/spec-examples/`. Labels may contain `\n` for line breaks; the script also wraps long lines.
+
+**Flowchart / state / data-flow / structure**
+
+```json
+{
+  "type": "flowchart",
+  "title": "Inquiry: flowchart",
+  "nodes": [
+    {"id": "start", "kind": "start", "spine": true, "label": "POST /inquiry\nIsoRequest JSON"},
+    {"id": "auth", "kind": "decision", "spine": true, "label": "2. api_key valid?"},
+    {"id": "auth-note", "kind": "note", "note_for": "auth", "label": "header api_key must equal SERVER.API_KEY ..."},
+    {"id": "e401", "kind": "err", "label": "401 invalid api key"},
+    {"id": "rc89", "kind": "step", "label": "respCode = 89 (link down)"},
+    {"id": "log", "kind": "subflow", "spine": true, "label": "13. ▶ Write ISO + Geneva log"}
+  ],
+  "edges": [
+    {"from": "start", "to": "auth", "kind": "success"},
+    {"from": "auth", "to": "e401", "kind": "error", "label": "no"},
+    {"from": "rc89", "to": "log", "kind": "rejoin"}
+  ]
+}
+```
+
+- `type`: `flowchart` (top-down, spine) · `state` (left-to-right) · `dataflow` / `structure` (zones, top-down).
+- Node `kind`: `start` `client` `step` `subflow` `decision` `db` `file` `object` `cache` `store` `queue` `internal` `external` `ok` `err` `note` `state` `initial` `final`. Colors and shapes come from the kind (section 8). Storage always uses the specific kind (`db`, `file`, `object`, `cache`); `store` is only for storage that is none of those.
+- `"spine": true` on every node of the happy path, in order. Exactly one straight column.
+- `"note_for": "<id>"` on notes. The script draws the dashed connector itself.
+- Edge `kind`: `success` (happy path) · `normal` · `error` (ends at an error end point) · `rejoin` (an error path that continues to a later spine step, sharing the right-hand channel) · `async` · `external` (state diagrams: cron, other app, manual). `"both": true` draws arrows on both ends.
+- Data-flow / structure: add `"zones": [{"id": "callers", "label": "Callers"}, {"id": "app", "label": "<app name>"}, {"id": "external", "label": "External systems"}, {"id": "db", "label": "Database (Oracle)"}, {"id": "files", "label": "File storage (local disk)"}]` (one zone per storage type that exists) and a `"zone"` on every node. The first zone is the top row.
+- `"direction"` overrides the default (`TB` or `LR`), rarely needed.
+
+**Sequence**
+
+```json
+{
+  "type": "sequence",
+  "title": "Inquiry: sequence",
+  "participants": [
+    {"id": "caller", "kind": "client", "label": "Upstream caller"},
+    {"id": "svc", "kind": "step", "label": "postpaid.Service"},
+    {"id": "tibco", "kind": "external", "label": "Tibco postpaid API"}
+  ],
+  "steps": [
+    {"from": "caller", "to": "svc", "label": "POST /inquiry {rrn, billData}"},
+    {"frame": "alt", "label": "[Tibco unreachable]",
+     "steps": [{"from": "tibco", "to": "svc", "kind": "error", "label": "dial error → respCode 89"}],
+     "else": [{"label": "[reply ok]", "steps": [{"from": "tibco", "to": "svc", "kind": "reply", "label": "200 {status}"}]}]},
+    {"from": "svc", "to": "caller", "kind": "reply", "label": "200 {respCode, billData}"}
+  ]
+}
+```
+
+- Message `kind`: `sync` (default) · `async` · `reply` · `error`. A message to the same participant draws a self-loop.
+- Frames: `"frame": "alt" | "opt" | "loop"` with a condition `label`, nested `steps`, and for `alt` any `else` blocks.
+- Messages are numbered automatically in order, frames included. Write the numbered steps in the text to match.
 

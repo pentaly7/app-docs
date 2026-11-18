@@ -1,0 +1,194 @@
+{
+ "type": "dataflow",
+ "title": "Data flow",
+ "zones": [
+  {
+   "id": "callers",
+   "label": "Callers"
+  },
+  {
+   "id": "app",
+   "label": "myim3-http-gateway"
+  },
+  {
+   "id": "outside",
+   "label": "External systems"
+  },
+  {
+   "id": "database",
+   "label": "Database (Oracle)"
+  },
+  {
+   "id": "files",
+   "label": "File storage (local disk)"
+  }
+ ],
+ "nodes": [
+  {
+   "id": "up",
+   "kind": "client",
+   "zone": "callers",
+   "label": "Upstream caller"
+  },
+  {
+   "id": "op",
+   "kind": "client",
+   "zone": "callers",
+   "label": "Operator"
+  },
+  {
+   "id": "svc",
+   "kind": "step",
+   "zone": "app",
+   "label": "Inquiry / Payment\n(postpaid.Service)"
+  },
+  {
+   "id": "reload",
+   "kind": "step",
+   "zone": "app",
+   "label": "Reload config\n(GET /reload-config)"
+  },
+  {
+   "id": "cfg",
+   "kind": "step",
+   "zone": "app",
+   "label": "configstore.Store\nRC map in memory"
+  },
+  {
+   "id": "repo",
+   "kind": "step",
+   "zone": "app",
+   "label": "oracle.Repository\nqueries \u00b7 inserts \u00b7 SAF queue"
+  },
+  {
+   "id": "saf",
+   "kind": "step",
+   "zone": "app",
+   "label": "SAF replay\n(StoreAndForward goroutine)"
+  },
+  {
+   "id": "log",
+   "kind": "step",
+   "zone": "app",
+   "label": "logfile (slog)"
+  },
+  {
+   "id": "tibco",
+   "kind": "external",
+   "zone": "outside",
+   "label": "Tibco postpaid API"
+  },
+  {
+   "id": "rc",
+   "kind": "db",
+   "zone": "database",
+   "label": "POSTPAID_TIBCO_MAPPING_RC\n(table)"
+  },
+  {
+   "id": "geneva",
+   "kind": "db",
+   "zone": "database",
+   "label": "GENEVA_CUST_TRANS\n(table)"
+  },
+  {
+   "id": "iso",
+   "kind": "db",
+   "zone": "database",
+   "label": "ISO_LOG\n(table)"
+  },
+  {
+   "id": "saffile",
+   "kind": "file",
+   "zone": "files",
+   "label": "SAF queue file\nlogs/myim3-http-gateway/SAF/SAF"
+  },
+  {
+   "id": "logs",
+   "kind": "file",
+   "zone": "files",
+   "label": "Log files\nlogs/app.YYYY-MM-DD.log(.gz)"
+  }
+ ],
+ "edges": [
+  {
+   "from": "up",
+   "to": "svc",
+   "kind": "success",
+   "both": true,
+   "label": "IsoRequest / reply"
+  },
+  {
+   "from": "op",
+   "to": "reload",
+   "label": "GET"
+  },
+  {
+   "from": "svc",
+   "to": "tibco",
+   "kind": "success",
+   "both": true,
+   "label": "inquiry / reply"
+  },
+  {
+   "from": "svc",
+   "to": "cfg",
+   "label": "RC lookup"
+  },
+  {
+   "from": "svc",
+   "to": "repo",
+   "kind": "success",
+   "label": "lookups, log rows"
+  },
+  {
+   "from": "svc",
+   "to": "log",
+   "label": "log records"
+  },
+  {
+   "from": "reload",
+   "to": "rc",
+   "label": "GetMapRc"
+  },
+  {
+   "from": "reload",
+   "to": "cfg",
+   "label": "new RC map"
+  },
+  {
+   "from": "repo",
+   "to": "geneva",
+   "kind": "success",
+   "label": "INSERT row"
+  },
+  {
+   "from": "repo",
+   "to": "iso",
+   "kind": "success",
+   "label": "INSERT row"
+  },
+  {
+   "from": "repo",
+   "to": "saffile",
+   "kind": "async",
+   "label": "append op|json"
+  },
+  {
+   "from": "saffile",
+   "to": "saf",
+   "kind": "async",
+   "label": "drain lines"
+  },
+  {
+   "from": "saf",
+   "to": "repo",
+   "kind": "async",
+   "label": "replayed rows"
+  },
+  {
+   "from": "log",
+   "to": "logs",
+   "label": "JSON lines"
+  }
+ ]
+}

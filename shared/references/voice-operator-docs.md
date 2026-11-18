@@ -1,6 +1,6 @@
-# Preset suara: Panduan Operator (app-docs)
+# Preset suara: User Guide (app-docs)
 
-Preset untuk skill humanizer-indonesia, dipakai plugin app-docs saat merapikan Panduan Operator. Bagian 0 sampai 3 dan bagian 6 mengikuti susunan preset bawaan skill.
+Preset untuk skill humanizer-indonesia, dipakai plugin app-docs saat merapikan User Guide (isinya berbahasa Indonesia). Bagian 0 sampai 3 dan bagian 6 mengikuti susunan preset bawaan skill.
 
 ## 0. Asal korpus dan tingkat keyakinan
 
@@ -46,4 +46,4 @@ Sama dengan preset `semiformal` di `scripts/metrik.py`:
 
 ## 6. Hipotesis yang sudah diuji
 
-Belum ada. Preset ini belum dikalibrasi terhadap tulisan tim. Catat hasilnya di sini setelah beberapa Panduan Operator selesai ditinjau manusia.
+Belum ada. Preset ini belum dikalibrasi terhadap tulisan tim. Catat hasilnya di sini setelah beberapa User Guide selesai ditinjau manusia.

@@ -10,6 +10,8 @@ Subcommands (all print JSON to stdout):
   sync-plan   Docmost page plan: prepared markdown, hashes, what changed
   sync-record record one synced Docmost page in state.json
   svg-theme   apply the light/dark diagram palette to every .drawio.svg
+  migrate     bring existing docs up to the current conventions (idempotent)
+  readme-plan what /app-docs:readme needs per app: guides, verified commit vs HEAD, owners, links
 
 Exit codes: 0 ok, 1 validation failures found, 2 usage/environment error.
 """
@@ -32,7 +34,7 @@ TEMPLATE_VERSION = 2
 # Bumped when only the operator-guide humanizer rules change: re-humanize, don't regenerate.
 HUMANIZER_VERSION = 2
 # Bumped when only diagram rules change: redraw diagrams, keep the text.
-DIAGRAM_VERSION = 3
+DIAGRAM_VERSION = 5
 
 # Light colors used by diagrams.md §8 → their dark-palette counterparts (diagrams.md §8, dark column).
 DARK_FILL = {
@@ -41,11 +43,13 @@ DARK_FILL = {
     "#A9DFBF": "#1B4D2E", "#F8CECC": "#5C2323", "#FFF9DB": "#3D3820", "#E8F5E9": "#1B3A24",
     "#FDECEA": "#4A2020", "#FFFFFF": "#1E1E1E", "#1E8449": "#4CAF6E", "#B85450": "#E57373",
     "#000000": "#B0B0B0",
+    "#F0E2C8": "#3D3220", "#F2D7E9": "#4A2440", "#E2EFDA": "#263A1C", "#EEF3EE": "#2B332B",
 }
 DARK_STROKE = {
     "#333333": "#B0B0B0", "#6C8EBF": "#6C9BD2", "#9673A6": "#B39DDB", "#D6B656": "#E0C35A",
     "#82B366": "#7BC47F", "#D79B00": "#F0A040", "#0E8088": "#4FC3C9", "#666666": "#9E9E9E",
     "#1E8449": "#4CAF6E", "#B85450": "#E57373", "#000000": "#B0B0B0",
+    "#A0844F": "#C9A86A", "#A65C8C": "#D58BBF", "#548235": "#8FC26A", "#7A8C7A": "#A3B5A3",
 }
 DARK_TEXT = {"#1A1A1A": "#E8E8E8", "#000000": "#E8E8E8", "#FFFFFF": "#1A1A1A"}
 DARK_BACKGROUND = "#1E1E1E"
@@ -690,6 +694,110 @@ def cmd_svg_theme(args):
     emit({"mode": mode, "themed": len(done), "files": done})
 
 
+# ---------------------------------------------------------------- migrate
+
+OLD_USER_GUIDE_TITLE = re.compile(r"^# (.+?)(?::| —| –| -) Panduan Operator\s*$")
+
+
+def cmd_migrate(args):
+    """The operator guide's title became "User Guide" (content stays Indonesian). Rewrites old H1s in place."""
+    repo = Path(args.repo).resolve()
+    state_path = repo / DOCS_DIR / ".docgen" / "state.json"
+    changed = []
+    for app_id in sorted(load_json(state_path).get("apps", {})) if state_path.exists() else []:
+        app_file = repo / DOCS_DIR / ".docgen" / "apps" / ("%s.json" % app_id)
+        if not app_file.exists():
+            continue
+        target = repo / load_json(app_file).get("docs", {}).get("operator", "")
+        for md in ([target] if target.is_file() else sorted(target.rglob("*.md")) if target.is_dir() else []):
+            lines = md.read_text(encoding="utf-8").split("\n")
+            for i, line in enumerate(lines):
+                match = OLD_USER_GUIDE_TITLE.match(line)
+                if match:
+                    lines[i] = "# %s: User Guide" % match.group(1)
+                    md.write_text("\n".join(lines), encoding="utf-8")
+                    changed.append(md.relative_to(repo).as_posix())
+                    break
+    emit({"migrated": changed})
+
+
+# ---------------------------------------------------------------- readme
+
+def _codeowners(repo, root):
+    """Owners whose CODEOWNERS pattern covers the app root (last matching rule wins, as in GitLab/GitHub)."""
+    for candidate in (".gitlab/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS", ".github/CODEOWNERS"):
+        path = Path(repo) / candidate
+        if not path.is_file():
+            continue
+        owners = []
+        target = "/" + root.strip("/") + "/" if root not in (".", "") else "/"
+        for line in _read(path).splitlines():
+            line = line.strip()
+            if not line or line.startswith(("#", "[")):
+                continue
+            parts = line.split()
+            pattern = parts[0] if parts[0].startswith("/") else "/" + parts[0]
+            if pattern in ("/*", "/**") or target.startswith(pattern.rstrip("*")):
+                owners = parts[1:]
+        if owners:
+            return {"source": candidate, "owners": owners}
+    return None
+
+
+def _top_committers(repo, root, limit=3):
+    out = git(repo, "shortlog", "-sne", "--since=6.months", "HEAD", "--", root if root not in ("", ".") else ".", check=False)
+    people = []
+    for line in out.splitlines()[:limit]:
+        count, _, who = line.strip().partition("\t")
+        people.append({"who": who.strip(), "commits": int(count or 0)})
+    return {"source": "git history, last 6 months", "owners": people} if people else None
+
+
+def cmd_readme_plan(args):
+    repo = Path(args.repo).resolve()
+    state_path = repo / DOCS_DIR / ".docgen" / "state.json"
+    if not state_path.exists():
+        emit({"error": "no docs/.docgen/state.json: run /app-docs:generate first"}, 2)
+    state = load_json(state_path)
+    head = git(repo, "rev-parse", "HEAD").strip()
+    pages = state.get("docmost", {}).get("pages", {})
+    apps, missing = [], []
+    for app_id, app in sorted(state.get("apps", {}).items()):
+        app_file = repo / DOCS_DIR / ".docgen" / "apps" / ("%s.json" % app_id)
+        app_state = load_json(app_file) if app_file.exists() else {}
+        dev = repo / app_state.get("docs", {}).get("dev", "__none__")
+        if app.get("stage") != "done" or not (dev.is_file() or dev.is_dir()):
+            missing.append(app_id)
+            continue
+        sections = [sec for sec in app_state.get("sections", {}).values() if sec.get("status") != "removed"]
+        latest = max(sections, key=lambda sec: (sec.get("date", ""), sec.get("sha", "")), default={})
+        verified = latest.get("sha", "")
+        behind = git(repo, "rev-list", "--count", "%s..HEAD" % verified, check=False).strip() if verified else ""
+        root = app_state.get("root", app.get("root", "."))
+        readme = (repo / root / "README.md") if root not in ("", ".") else repo / "README.md"
+
+        def rel(target):
+            return os.path.relpath(repo / target, readme.parent).replace(os.sep, "/")
+        structure = repo / DOCS_DIR / app_id / "diagrams" / "structure.drawio.svg"
+        apps.append({
+            "app_id": app_id, "root": root, "readme": readme.relative_to(repo).as_posix(),
+            "dev_guide": rel(app_state["docs"]["dev"]), "user_guide": rel(app_state["docs"]["operator"]),
+            "structure_diagram": rel(structure.relative_to(repo).as_posix()) if structure.exists() else None,
+            "docmost_url": pages.get(app_id, {}).get("url"),
+            "verified_sha": verified, "verified_date": latest.get("date"), "verified_branch": latest.get("branch"),
+            "head_sha": head, "commits_since_verified": int(behind) if behind.isdigit() else None,
+            "sections_not_at_head": sum(1 for sec in sections if sec.get("sha") != head or sec.get("dirty")),
+            "owners": _codeowners(repo, root) or _top_committers(repo, root),
+        })
+    monorepo = len(state.get("apps", {})) > 1 or any(a["root"] not in ("", ".") for a in apps)
+    emit({
+        "head_sha": head, "dirty": bool(changed_paths_outside_docs(repo)),
+        "apps": apps, "missing_dev_guide": missing,
+        "root_index": {"readme": "README.md", "owners": _codeowners(repo, ".") or _top_committers(repo, ".")} if monorepo else None,
+        "docs_behind_head": [a["app_id"] for a in apps if a["verified_sha"] != head],
+    })
+
+
 # ---------------------------------------------------------------- sync
 
 def _prepare_markdown(path):
@@ -822,7 +930,7 @@ def cmd_sync_plan(args):
         app_state = load_json(repo / DOCS_DIR / ".docgen" / "apps" / ("%s.json" % app_id))
         app_name = _app_name(repo, app_state, app_id)
         add(app_id, None, app_name)
-        for kind, label in (("operator", "Operator Guide"), ("dev", "Dev Doc")):
+        for kind, label in (("operator", "User Guide"), ("dev", "Dev Guide")):
             target = repo / app_state["docs"][kind]
             if target.is_file():
                 add(target.relative_to(repo / DOCS_DIR).as_posix(), app_id, _subpage_title(_title(target, label), app_name), target)
@@ -875,7 +983,7 @@ def cmd_sync_record(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
-    for name in ("meta", "detect", "drift", "sync-plan"):
+    for name in ("meta", "detect", "drift", "sync-plan", "migrate", "readme-plan"):
         p = sub.add_parser(name)
         p.add_argument("--repo", default=".")
     p = sub.add_parser("author")
@@ -900,7 +1008,7 @@ def main():
     p.add_argument("--mode", choices=["adaptive", "light"])
     args = parser.parse_args()
     handlers = {"meta": cmd_meta, "detect": cmd_detect, "author": cmd_author, "drift": cmd_drift,
-                "validate": cmd_validate, "svg-theme": cmd_svg_theme, "sync-plan": cmd_sync_plan, "sync-record": cmd_sync_record}
+                "validate": cmd_validate, "svg-theme": cmd_svg_theme, "migrate": cmd_migrate, "readme-plan": cmd_readme_plan, "sync-plan": cmd_sync_plan, "sync-record": cmd_sync_record}
     try:
         handlers[args.cmd](args)
     except (RuntimeError, OSError, KeyError, ValueError) as exc:

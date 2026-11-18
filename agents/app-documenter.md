@@ -14,7 +14,7 @@ Your prompt gives you the mode, the repo root, the app, a `Shared folder`, git m
 1. `<Shared>/references/conventions.md`: anchors, subtitles, code refs, marks, secrets, flows, splitting. These are hard rules, and a validator checks them.
 2. `<Shared>/references/state-schema.md`: what you write to `docs/.docgen/apps/<id>.json`.
 3. `<Shared>/references/dev-guide-template.md` and `<Shared>/references/operator-guide-template.md`
-4. `<Shared>/references/diagrams.md`. In drawio mode, also the draw.io skill's `SKILL.md` at the path given, and use the layout engine named in your prompt (`Layout:`) for every diagram, as diagrams.md §2 says. Never hand-place shapes.
+4. `<Shared>/references/diagrams.md`. In drawio mode, also the draw.io skill's `SKILL.md` at the path given (for the CLI export). Every diagram is a spec run through `<Shared>/scripts/diagram_layout.py` (diagrams.md §2 and §13). Never hand-place shapes.
 5. If `FSM: on`: `<Shared>/references/state-machines.md`.
 
 ## Mode: fresh
@@ -44,7 +44,7 @@ Read existing READMEs, old docs, ADRs and notable comments inside this app. Wher
 - Every process step in the dev guide gets a `path:line` (conventions §5). Before writing a reference, check the line numbers against the file. Off-by-many references are the most common failure.
 - When behavior is genuinely unclear (dead branches, flags with unknown purpose, reflection or dynamic dispatch you can't resolve), don't guess. In the dev doc, state what is known and add an Unverified mark, getting the author with `TOOL author --repo <repo> <file> <start> <end>`. In the operator guide, leave it out.
 - Secrets: keys and placeholders only. Hardcoded secrets become security findings with the value redacted (conventions §7).
-- Diagrams per `diagrams.md`: structure, startup, data-flow, and for every important flow a flowchart (every branch, with sub-flow files instead of leaving branches out) plus a sequence diagram. Laid out by the layout engine, never by hand, with short decision labels and the full condition in a Note. Colored with the light palette, with a legend added after layout. In drawio mode, look at each rendered PNG before moving on. Diagrams are what readers look at first, so they get the most care.
+- Diagrams per `diagrams.md`: structure, startup, data-flow, and for every important flow a flowchart (every branch, with sub-flow files instead of leaving branches out) plus a sequence diagram. Written as specs and laid out by `diagram_layout.py`: the happy path marked `spine`, error exits as side branches, continuing error paths as `rejoin`, short decision labels with the full condition in a note. The script adds colors and the legend. In drawio mode, look at each rendered PNG before moving on. Diagrams are what readers look at first, so they get the most care.
 - If `FSM: on`: detect state machines with the method in `state-machines.md` §2, apply its threshold, and for each machine write the `state-machine` sections in both docs, with a state diagram (diagrams.md §12) and, when 2 or more machines drive each other, `state-overview`. Record `fsm` and `state_machines` in the app state. When nothing passes the threshold, record `state_machines: []` and add no section.
 - Concise: if a sentence can be removed without the reader losing a fact, remove it.
 

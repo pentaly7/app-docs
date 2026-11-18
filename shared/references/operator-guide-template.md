@@ -21,10 +21,12 @@ Audience: an operator who runs and monitors the app and wants to investigate an 
 
 ## Structure
 
+The document title is the English "User Guide" (that's how it appears in GitLab and Docmost). Everything under it, headings included, stays in Bahasa Indonesia.
+
 Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagrams.md`: the same files as the dev guide.
 
 ```markdown
-# <App name>: Panduan Operator
+# <App name>: User Guide
 
 <!-- docgen:section id="setup" -->
 ## 1. Setup
@@ -99,7 +101,7 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 ## 4. Alur Data
 > …
 
-<data-flow diagram, lalu tabel: jenis data, lokasi penyimpanan, siapa yang menulis dan membaca, lama penyimpanan>
+<data-flow diagram, lalu tabel: jenis data, **jenis penyimpanan** (database / file storage / object storage / cache / queue) dan lokasi persisnya (tabel, path, bucket), siapa yang menulis dan membaca, lama penyimpanan>
 
 <!-- docgen:section id="troubleshooting" -->
 ## 5. Troubleshooting

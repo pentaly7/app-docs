@@ -3,7 +3,7 @@
 A Claude Code plugin that writes and maintains two documents for every app in a repository:
 
 - **Dev Guide**: software-engineering English, with `path:line` for every process. Sections: what the app is, structure, setup, startup, app flow, data flow, dev notes, glossary.
-- **Panduan Operator**: semiformal Bahasa Indonesia (no slang, no "Anda"/"kamu", tech terms in English), humanized with humanizer-indonesia as the last step, no code references. Sections: setup, cara aplikasi bekerja, app flow, data flow, troubleshooting, glossary.
+- **User Guide** (for operators): titled in English, written in semiformal Bahasa Indonesia (no slang, no "Anda"/"kamu", tech terms in English), humanized with humanizer-indonesia as the last step, no code references. Sections: setup, cara aplikasi bekerja, app flow, data flow, troubleshooting, glossary.
 
 Docs are written to `/docs`, reviewed by a fresh-context "goldfish" agent (the Elephant-Goldfish pattern), checked by a non-LLM validator, and synced one-way to Docmost.
 
@@ -14,10 +14,11 @@ Docs are written to `/docs`, reviewed by a fresh-context "goldfish" agent (the E
 | `/app-docs:generate [drawio] [fsm]` | Main command. Fresh docs for new apps, drift update for documented ones, full regeneration after a template change, resume after an interrupted run. |
 | `/app-docs:update [drawio] [fsm]` | Drift report, then fixes only the affected sections of already-documented apps. |
 | `/app-docs:sync [docmost-url]` | One-way sync to Docmost through your logged-in Chrome. The URL is saved after the first run. |
+| `/app-docs:readme` | Rewrites each app's `README.md` (and a monorepo root index) as a condensed copy of its Dev Guide: what it is, tech stack, quick start, configuration, structure diagram, flows, doc links, owners (CODEOWNERS, else recent committers), last-verified commit. Asks first if the Dev Guide is behind `HEAD`; stops if an app has no Dev Guide yet. |
 
 Skills this plugin uses:
 - **[humanizer-indonesia](https://github.com/adhiprib/humanizer-indonesia)** (dependency, always used): polishes the operator guide's prose in `semiformal` register, with the plugin's own voice preset (`shared/references/voice-operator-docs.md`). If it isn't installed, the plugin warns and uses its fallback rules. Install it with `git clone https://github.com/adhiprib/humanizer-indonesia ~/.claude/skills/humanizer-indonesia`.
-- **[draw.io skill](https://github.com/Agents365-ai/drawio-skill)** (optional): add `drawio` to the command, or run the skill first in the same session, to get editable `.drawio.svg` diagrams. Shapes are never placed by hand: the skill's `autolayout.py` arranges them with **Graphviz** (preferred), or draw.io CLI **v30+** does it with ELK, and `seqlayout.py` lays out sequence diagrams. Without either layout engine the run stops and tells you what to install. Without it, diagrams are colored Mermaid blocks. It uses `disable-model-invocation`, so when you ask for it the plugin reads its `SKILL.md` directly, because subagents can't inherit skills loaded in your session.
+- **[draw.io skill](https://github.com/Agents365-ai/drawio-skill)** (optional): add `drawio` to the command, or run the skill first in the same session, to get editable `.drawio.svg` diagrams. Shapes are never placed by hand: agents write a small spec per diagram and the plugin's `shared/scripts/diagram_layout.py` lays it out with **Graphviz**: a straight happy path, side exits for errors, one shared channel for errors that continue, notes on the left, zones for data-flow, numbered circles in sequence diagrams. Without Graphviz the run stops and tells you how to install it. Without it, diagrams are colored Mermaid blocks. It uses `disable-model-invocation`, so when you ask for it the plugin reads its `SKILL.md` directly, because subagents can't inherit skills loaded in your session.
 
 ## Diagrams
 
@@ -26,7 +27,7 @@ Skills this plugin uses:
 | Structure | dev `structure`, operator `how-it-works` |
 | Startup flowchart | dev `startup`, operator `how-it-works` |
 | Flowchart (every branch, sub-flow files instead of size limits) + sequence diagram | every important flow, both docs |
-| Data-flow diagram | `data-flow`, both docs |
+| Data-flow diagram, with one group per storage type (database, file storage, object storage, cache) | `data-flow`, both docs |
 | State diagram per state machine, plus an overview (with `fsm`) | `state-machine`, both docs |
 
 Colored by component kind and outcome, with a legend. Long decision conditions go into a Note beside a short diamond label. Every `.drawio.svg` carries a light and a dark palette and follows the viewer's dark mode. The first Docmost sync checks that it follows Docmost's own toggle, and switches every diagram to always-light if it doesn't. The validator checks that each one exists, is editable, is a single page, is colored and has a legend. Full rules: `shared/references/diagrams.md`.
@@ -79,6 +80,12 @@ Add `fsm` once (`/app-docs:generate fsm`) and every app in the repo gets state m
 
 ## Upgrading
 
+From 2.5: "Panduan Operator" is now titled "User Guide" (content stays Indonesian). The next generate or sync renames existing titles automatically, in the files and in Docmost.
+
+From 2.4: the next `/app-docs:generate drawio` redraws diagrams with separate storage types (text untouched).
+
+From 2.3: the next `/app-docs:generate drawio` redraws every diagram with the new layout script (text untouched). Install Graphviz first.
+
 From 2.2: the next `/app-docs:generate drawio` redraws every diagram with auto-layout and the new palette (text untouched), then themes them. Install Graphviz first, or draw.io desktop v30+.
 
 From 2.0: the next `/app-docs:generate` re-humanizes every operator guide (semiformal, no slang) and redraws the diagrams.
@@ -89,7 +96,7 @@ Template version 2 changes diagrams, the operator guide's voice and its sections
 
 ## Known limits
 
-- **Docmost page titles:** only the app's page carries the app name. Sub-pages drop it ("Panduan Operator", "Dev Guide"). The markdown files in GitLab keep their full H1.
+- **Docmost page titles:** only the app's page carries the app name. Sub-pages drop it ("User Guide", "Dev Guide"). The markdown files in GitLab keep their full H1.
 - **Docmost sync is UI automation.** The first sync runs a calibration (Markdown paste and SVG upload) and stops if your Docmost version doesn't support them. A Docmost UI upgrade can break it.
 - Mermaid mode doesn't get the dark palette: Docmost renders Mermaid itself.
 - Diagrams in Docmost are images, scaled to the page width. Large flowcharts are split into sub-flow files so each stays readable. Edit them through the `.drawio.svg` in GitLab, then sync.

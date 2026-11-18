@@ -23,7 +23,7 @@ You are the orchestrator. You never read application code yourself. You run the 
 1. Not inside a git repo → stop and say so. Provenance and drift both need git.
 2. Run `TOOL meta --repo REPO`. Keep the JSON (`sha`, `short_sha`, `branch`, `dirty`, `date`, `user`).
 3. If `dirty` is true, warn in one line ("Uncommitted changes: sections will be marked `+ uncommitted changes`") and continue.
-4. Make sure `docs/.docgen/.gitignore` exists and contains `.work/`.
+4. Make sure `docs/.docgen/.gitignore` exists and contains `.work/`. Run `TOOL migrate --repo REPO` (cheap, idempotent): it brings docs written by older plugin versions up to current conventions, such as the "User Guide" title.
 5. If the arguments contain `fsm`: set `fsm: true` for **every** app in `state.json` (and every app added in this run). It stays on for later runs without the word. An app that was `done` with `fsm` false gets the "FSM newly enabled" update (section 4).
 
 ## 3. Diagram mode, layout, state machines, humanizer
@@ -38,15 +38,7 @@ Then:
 1. Find the skill folder. Use the base directory if it was shown. Otherwise take the first folder with a `SKILL.md` among `~/.claude/skills/*drawio*`, `REPO/.claude/skills/*drawio*`, `~/.agents/skills/*drawio*`, `~/.claude/plugins/**/skills/*drawio*`.
 2. Check the CLI: `drawio --version`, `draw.io --version`, or `/Applications/draw.io.app/Contents/MacOS/draw.io --version`.
 3. If both checks pass, the mode is `drawio` with `DRAWIO_SKILL=<folder>`. Otherwise the mode is `mermaid`. Tell the user why in one line ("draw.io CLI not found — using Mermaid"), so they don't discover it halfway through the run.
-4. **Layout engine (draw.io mode only).** Diagrams are never placed by hand (diagrams.md §2), so one of these must work:
-   - `command dot -V < /dev/null` succeeds and `<DRAWIO_SKILL>/scripts/autolayout.py` exists → `LAYOUT=graphviz` (preferred: orthogonal routing).
-   - else the draw.io CLI version is 30 or newer → `LAYOUT=elk`.
-   - `<DRAWIO_SKILL>/scripts/seqlayout.py` must exist too, for sequence diagrams.
-
-   If any of this is missing, **stop before any agent runs** and say exactly what to install:
-   - Graphviz: `brew install graphviz` (macOS), `sudo apt install graphviz` (Debian/Ubuntu), `winget install graphviz` (Windows); or
-   - draw.io desktop v30+: https://github.com/jgraph/drawio-desktop/releases
-   - a newer draw.io skill (missing scripts): `git pull` in its folder.
+4. **Layout engine (draw.io mode only).** Diagrams are laid out by the plugin's `<SHARED>/scripts/diagram_layout.py`, which needs Graphviz. `command dot -V < /dev/null` must succeed. If it doesn't, **stop before any agent runs** and say what to install: `brew install graphviz` (macOS), `sudo apt install graphviz` (Debian/Ubuntu), `winget install graphviz` (Windows).
 
 Without a draw.io request, the mode is `mermaid`, silently.
 
@@ -99,7 +91,7 @@ Repo root: <REPO>
 App: id=<id> root=<root> language=<lang> kind=<kind-guess>
 Shared folder: <SHARED>
 Meta: <meta JSON>
-Diagram mode: <drawio|mermaid>   Draw.io skill: <path or "none">   Layout: <graphviz|elk|n/a>
+Diagram mode: <drawio|mermaid>   Draw.io skill: <path or "none">
 FSM: <on|off>
 Split: <"forced (repo has >10 apps)" | "decide by conventions §10">
 Other apps in this repo (for cross-app links): <id → docs path, or "not documented yet">
