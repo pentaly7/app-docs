@@ -1,14 +1,17 @@
 {"type":"sequence","title":"Inquiry: sequence","participants":[
- {"id":"c","kind":"client","label":"Upstream caller"},{"id":"api","kind":"step","label":"HTTP handler"},
- {"id":"svc","kind":"step","label":"postpaid.Service"},{"id":"cfg","kind":"step","label":"configstore"},
- {"id":"t","kind":"external","label":"Tibco postpaid API"},{"id":"db","kind":"store","label":"Oracle (ISO_LOG, GENEVA)"}],
+ {"id":"c","kind":"client","label":"Upstream caller"},{"id":"svc","kind":"step","label":"postpaid.Service"},
+ {"id":"cfg","kind":"step","label":"configstore.Store"},{"id":"t","kind":"external","label":"Tibco postpaid API"},{"id":"db","kind":"db","label":"Oracle"}],
  "steps":[
- {"from":"c","to":"api","label":"POST /inquiry {rrn, billData} · api_key"},
- {"frame":"alt","label":"[api_key invalid or body invalid]","steps":[{"from":"api","to":"c","kind":"error","label":"401 / 422 / 400"}]},
- {"from":"api","to":"svc","label":"Inquiry(req)"},
- {"from":"svc","to":"t","label":"POST INQUIRY_URL {transid, msisdn, channel} (timeout CLIENT.TIBCO.TIMEOUT)"},
- {"frame":"alt","label":"[Tibco unreachable / no usable reply]","steps":[{"from":"t","to":"svc","kind":"error","label":"dial error → respCode 89, timeout → 68"}],
-  "else":[{"label":"[reply ok]","steps":[{"from":"t","to":"svc","kind":"reply","label":"200 {status, servicedata}"},{"from":"svc","to":"cfg","label":"Artajasa(status)"},{"from":"cfg","to":"svc","kind":"reply","label":"mapped RC"}]}]},
- {"from":"svc","to":"db","label":"INSERT ISO_LOG, GENEVA_CUST_TRANS (deferred, every return)"},
- {"from":"svc","to":"svc","label":"build billData"},
- {"from":"api","to":"c","kind":"reply","label":"200 {mti 0210, respCode, billData}"}]}
+ {"from":"c","to":"svc","label":"Inquiry(ctx, req)"},
+ {"from":"svc","to":"t","label":"POST INQUIRY_URL {transid, msisdn, channel}, timeout CLIENT.TIBCO.TIMEOUT"},
+ {"frame":"alt","label":"[dial or DNS error, timeout, non-2xx, bad JSON, other]",
+  "steps":[{"from":"t","to":"svc","kind":"error","label":"respCode 89 (unreachable), 68 (no response) or 05 (other)"}],
+  "else":[{"label":"[2xx JSON reply]","steps":[
+    {"from":"t","to":"svc","kind":"reply","label":"200 {status, servicedata}"},
+    {"from":"svc","to":"svc","label":"configStore.Artajasa(status)"},
+    {"frame":"alt","label":"[status not in RC map]","steps":[{"from":"svc","to":"svc","label":"respCode = 68, log \"failed to get rc artajasa\""}],
+     "else":[{"label":"[status mapped]","steps":[
+        {"from":"svc","to":"svc","label":"respCode = mapped RC, NewBillData(...)"},
+        {"frame":"opt","label":"[name or ref too long]","steps":[{"from":"svc","to":"svc","kind":"error","label":"strings.Repeat panics, recover gives HTTP 500"}]}]}]}]}]},
+ {"frame":"opt","label":"[deferred on every return, both writes in parallel]","steps":[{"from":"svc","to":"db","label":"InsertSingleLogIso"},{"from":"svc","to":"db","label":"InsertGenevaCustTrans"}]},
+ {"from":"svc","to":"c","kind":"reply","label":"200 {respCode, billData}"}]}

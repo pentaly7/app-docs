@@ -21,7 +21,7 @@ import textwrap
 
 TEXT = "#1A1A1A"
 NODE_STYLE = {
-    "start":    ("rounded=1;arcSize=50;", "#333333", "#333333", "#FFFFFF"),
+    "start":    ("rounded=1;arcSize=50;", "#2F2F2F", "#2F2F2F", "#FFFFFF"),
     "client":   ("rounded=1;arcSize=50;", "#DAE8FC", "#6C8EBF", TEXT),
     "step":     ("rounded=1;arcSize=12;", "#E1D5E7", "#9673A6", TEXT),
     "subflow":  ("shape=process;backgroundOutline=1;size=0.06;fontStyle=1;", "#E1D5E7", "#9673A6", TEXT),
@@ -38,8 +38,8 @@ NODE_STYLE = {
     "err":      ("rounded=1;arcSize=50;fontStyle=1;", "#F8CECC", "#B85450", TEXT),
     "note":     ("shape=note;size=12;align=left;spacingLeft=6;spacingRight=4;fontSize=11;", "#FFF9DB", "#D6B656", TEXT),
     "state":    ("rounded=1;arcSize=30;", "#E1D5E7", "#9673A6", TEXT),
-    "initial":  ("ellipse;", "#333333", "#333333", "#FFFFFF"),
-    "final":    ("ellipse;shape=doubleEllipse;", "#333333", "#333333", "#FFFFFF"),
+    "initial":  ("ellipse;", "#2F2F2F", "#2F2F2F", "#FFFFFF"),
+    "final":    ("ellipse;shape=doubleEllipse;", "#2F2F2F", "#2F2F2F", "#FFFFFF"),
 }
 LEGEND_NAME = {
     "start": "Start / entry", "client": "Client / caller", "step": "Step in this app",
@@ -62,7 +62,7 @@ EDGE_STYLE = {
     "reply":   ("strokeColor=#333333;dashed=1;endArrow=open;endFill=0;", "Reply"),
     "seq-error": ("strokeColor=#B85450;dashed=1;endArrow=open;endFill=0;", "Error reply"),
 }
-FONT = "fontFamily=Helvetica;fontSize=12;"
+FONT = "fontFamily=Helvetica;fontSize=12;fontColor=#1A1A1A;"  # explicit color: an unset label color can't be themed
 CHAR_W = 6.6      # px per character at 12px Helvetica, generous
 LINE_H = 16
 WRAP = {"decision": 24, "note": 38, "start": 34, "store": 26, "db": 26, "file": 28, "object": 26, "cache": 26, "external": 26, "default": 30}
@@ -178,6 +178,10 @@ class Layout:
         for n in list(self.nodes.values()) + self.containers + self.extras:
             xs += [n["x"], n["x"] + n["w"]]
             ys += [n["y"], n["y"] + n["h"]]
+        for x in self.extras:
+            if x.get("label_box"):
+                bx, by, bw, bh = x["label_box"]
+                xs.append(bx + bw)
         for e in self.edges:
             for p in e.get("all_points", []):
                 xs.append(p[0])
@@ -439,8 +443,17 @@ def _sequence_layout(spec):
 
     # column gaps wide enough for every label that spans them
     gaps = [190.0] * max(1, len(parts) - 1)
+    tail = 0.0   # room right of the last column for its self-message labels
     for kind, step, _ in flat:
-        if kind != "msg" or step["from"] == step["to"]:
+        if kind == "msg" and step["from"] == step["to"]:
+            col = index[step["from"]]
+            need = max(len(l) for l in wrap_label(step.get("label", ""), 46)) * CHAR_W + 90
+            if col < len(gaps) and len(parts) > 1:
+                gaps[col] = max(gaps[col], need)
+            if col == len(parts) - 1:
+                tail = max(tail, need)
+            continue
+        if kind != "msg":
             continue
         a, b = sorted((index[step["from"]], index[step["to"]]))
         lines = wrap_label(step.get("label", ""), 46)
@@ -459,7 +472,7 @@ def _sequence_layout(spec):
     frames = []
     for kind, step, depth in flat:
         if kind == "frame-start":
-            frames.append({"step": step, "y0": y - 6, "depth": depth, "elses": [], "cols": set()})
+            frames.append({"step": step, "y0": y - 6, "depth": depth, "elses": [], "cols": set(), "right": 0.0})
             y += 34
         elif kind == "else":
             frames[-1]["elses"].append((y + 4, step.get("label", "")))
@@ -467,11 +480,13 @@ def _sequence_layout(spec):
         elif kind == "frame-end":
             frame = frames.pop()
             cols = frame["cols"] or {0, len(parts) - 1}
-            for f in frames:
-                f["cols"] |= cols
             inset = frame["depth"] * 10
             x0 = xs[min(cols)] - 70 + inset
-            x1 = xs[max(cols)] + 70 - inset
+            x1 = max(xs[max(cols)] + 70 - inset, frame["right"] + 12,
+                     x0 + 70 + len(frame["step"].get("label", "")) * CHAR_W)   # condition text fits inside
+            for f in frames:
+                f["cols"] |= cols
+                f["right"] = max(f["right"], x1 + 10)
             layout.extras.append({"type": "frame", "label": frame["step"]["frame"], "cond": frame["step"].get("label", ""),
                                   "x": x0, "y": frame["y0"], "w": x1 - x0, "h": y - frame["y0"] + 6, "elses": frame["elses"]})
             y += 18
@@ -487,15 +502,21 @@ def _sequence_layout(spec):
             if msg_kind == "error":
                 msg_kind = "seq-error"
             if a == b:
-                pts = [(a, y), (a + 46, y), (a + 46, y + 22), (a, y + 22)]
-                y += 22
+                y -= label_h                      # self-message: the label sits right of the loop, not above it
+                pts = [(a, y), (a + 46, y), (a + 46, y + 26), (a, y + 26)]
+                label_box = (a + 56, y - 2, max(len(l) for l in lines) * CHAR_W + 10, max(label_h, 30))
+                for f in frames:
+                    f["right"] = max(f["right"], label_box[0] + label_box[2])
+                y += max(26, label_h)
             else:
                 pts = [(a, y), (b, y)]
+                label_box = None
             layout.extras.append({"type": "message", "kind": msg_kind, "lines": lines, "points": pts, "number": number,
-                                  "x": min(a, b), "y": y - label_h, "w": abs(b - a) or 46, "h": label_h})
+                                  "x": min(a, b), "y": y - label_h, "w": abs(b - a) or 46, "h": label_h, "label_box": label_box})
             layout.edge_kinds_used.add(msg_kind)
             y += 30
     bottom = y + 20
+    layout.tail = tail
     for i, p in enumerate(parts):
         kind = p.get("kind", "step")
         layout.kinds_used.add(kind)
@@ -559,7 +580,7 @@ def write_drawio(layout, title):
         ids[nid] = d.vertex("" if n["kind"] in ("initial", "final") else cell_value(n["lines"]), _style(base, fill, stroke, font),
                             n["x"], n["y"], n["w"], n["h"])
     for e in layout.edges:
-        style = "edgeStyle=none;rounded=0;html=1;%sfontSize=11;labelBackgroundColor=#FFFFFF;%s" % (FONT, EDGE_STYLE[e["kind"]][0])
+        style = "edgeStyle=none;rounded=1;arcSize=16;html=1;%sfontSize=11;labelBackgroundColor=#FFFFFF;%s" % (FONT, EDGE_STYLE[e["kind"]][0])
         style += "exitX=%.3f;exitY=%.3f;exitDx=0;exitDy=0;entryX=%.3f;entryY=%.3f;entryDx=0;entryDy=0;" % (e["exit"] + e["entry"])
         if e.get("both"):
             style += "startArrow=block;startFill=1;"
@@ -586,10 +607,13 @@ def write_drawio(layout, title):
         if x["type"] != "message":
             continue
         pts = x["points"]
-        style = "html=1;rounded=0;%sfontSize=11;verticalAlign=bottom;labelBackgroundColor=none;%s" % (FONT, EDGE_STYLE[x["kind"]][0])
-        d.edge(cell_value(x["lines"]), style, source_point=pts[0], target_point=pts[-1], points=pts[1:-1])
+        style = "html=1;rounded=1;%sfontSize=11;verticalAlign=bottom;labelBackgroundColor=none;%s" % (FONT, EDGE_STYLE[x["kind"]][0])
+        box = x.get("label_box")
+        d.edge("" if box else cell_value(x["lines"]), style, source_point=pts[0], target_point=pts[-1], points=pts[1:-1])
+        if box:
+            d.vertex(cell_value(x["lines"]), "text;html=1;%sfontSize=11;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;" % FONT, *box)
         # Mermaid-style autonumber: dark circle with a white number where the arrow starts
-        d.vertex(str(x["number"]), "ellipse;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=10;fontStyle=1;fillColor=#333333;strokeColor=#333333;fontColor=#FFFFFF;",
+        d.vertex(str(x["number"]), "ellipse;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=10;fontStyle=1;fillColor=#2F2F2F;strokeColor=#2F2F2F;fontColor=#FFFFFF;",
                  pts[0][0] - 11, pts[0][1] - 11, 22, 22)
     _legend(d, layout)
     return d.xml(title)
@@ -617,7 +641,7 @@ def _legend(d, layout):
             d.edge("", "html=1;rounded=0;" + EDGE_STYLE[key][0], source_point=(lx + 10, ry + 11), target_point=(lx + 40, ry + 11))
             text = EDGE_STYLE[key][1]
         else:
-            d.vertex("1", "ellipse;whiteSpace=wrap;html=1;fontSize=9;fontStyle=1;fillColor=#333333;strokeColor=#333333;fontColor=#FFFFFF;", lx + 17, ry + 2, 18, 18)
+            d.vertex("1", "ellipse;whiteSpace=wrap;html=1;fontSize=9;fontStyle=1;fillColor=#2F2F2F;strokeColor=#2F2F2F;fontColor=#FFFFFF;", lx + 17, ry + 2, 18, 18)
             text = "Step number (matches the text)"
         d.vertex(html.escape(text), "text;html=1;%sfontColor=%s;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;" % (FONT, TEXT),
                  lx + 50, ry, width - 56, row_h)
@@ -689,8 +713,13 @@ def write_preview(layout):
             color = "#B85450" if x["kind"] == "seq-error" else "#333"
             dash = ' stroke-dasharray="5 4"' if x["kind"] in ("reply", "seq-error") else ""
             out.append('<polyline points="%s" fill="none" stroke="%s"%s/><circle cx="%.0f" cy="%.0f" r="3" fill="%s"/>' % (" ".join("%.0f,%.0f" % p for p in pts), color, dash, pts[-1][0], pts[-1][1], color))
-            mid = (pts[0][0] + pts[-1][0]) / 2 if len(pts) == 2 else pts[1][0] + 60
-            out += _text(x["lines"], mid, pts[0][1] - 8 - 14 * (len(x["lines"]) - 1) / 2 - 2, size=11)
+            if x.get("label_box"):
+                bx, by, bw, bh = x["label_box"]
+                for i, line in enumerate(x["lines"]):
+                    out.append('<text x="%.0f" y="%.0f" font-size="11">%s</text>' % (bx, by + bh / 2 - 7 * (len(x["lines"]) - 1) + 4 + i * 14, html.escape(line)))
+            else:
+                mid = (pts[0][0] + pts[-1][0]) / 2
+                out += _text(x["lines"], mid, pts[0][1] - 8 - 14 * (len(x["lines"]) - 1) / 2 - 2, size=11)
             out.append('<circle cx="%.0f" cy="%.0f" r="11" fill="#333"/><text x="%.0f" y="%.0f" fill="#fff" font-size="10" font-weight="bold" text-anchor="middle">%d</text>' % (pts[0][0], pts[0][1], pts[0][0], pts[0][1] + 3.5, x["number"]))
     out.append("</svg>")
     return "\n".join(out)

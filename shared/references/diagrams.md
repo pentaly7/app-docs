@@ -1,4 +1,4 @@
-# Diagrams (diagram version 5)
+# Diagrams (diagram version 6)
 
 Diagrams are the first thing readers look at, so they carry the detail. They are **colorful, complete and exact**: every branch the code can take, real names, real values. The validator checks the parts marked **[checked]**.
 
@@ -45,7 +45,7 @@ python3 <Shared>/scripts/diagram_layout.py docs/.docgen/.work/<diagram-id>.json 
 What the script guarantees, so you don't have to:
 - **Flowcharts:** the happy path (`"spine": true`) is one straight vertical column. A decision's other branches leave **sideways** to an end point on the same row. Notes sit **left** of the shape they explain, joined by a dashed line. Error paths that continue to a later step (`"kind": "rejoin"`) run down **one shared channel** on the right instead of crossing the diagram.
 - **Data-flow / structure:** zones (Callers, the app, External systems, Storage) as labelled containers, top to bottom in the direction the data moves. Data going back to an earlier zone doesn't reorder them.
-- **Sequence:** one row per message, columns wide enough for every label, and a **numbered dark circle** at the start of every message, like Mermaid's `autonumber`.
+- **Sequence:** one row per message, columns wide enough for every label, and a **numbered dark circle** at the start of every message, like Mermaid's `autonumber`. A self-call's label sits to the right of its loop, and `alt`/`opt`/`loop` boxes widen to fit their labels, so no label lands on another or under a circle.
 - **Labels:** every line label is moved along its own line to a spot that doesn't touch a shape, another label or another line. Sideways lines get room for their label.
 - **All:** the colors in section 8 and a legend of exactly the kinds used.
 
@@ -146,7 +146,7 @@ Every diagram is colored by **component kind** and by **outcome**, and has a leg
 
 | Kind | Shape | draw.io style |
 |---|---|---|
-| Start | ellipse | `ellipse;whiteSpace=wrap;html=1;fillColor=#333333;strokeColor=#333333;fontColor=#FFFFFF;` |
+| Start, step-number circles | pill / circle | `fillColor=#2F2F2F;strokeColor=#2F2F2F;fontColor=#FFFFFF;` |
 | Client / user | rounded pill | `rounded=1;arcSize=50;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontColor=#1A1A1A;` |
 | Step in this app | rounded box | `rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontColor=#1A1A1A;` |
 | Sub-flow reference | predefined process | `shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontColor=#1A1A1A;fontStyle=1;` |
@@ -169,7 +169,8 @@ Dark palette applied by `svg-theme` (for reference; never draw with it):
 |---|---|---|
 | Background | `#FFFFFF` | `#1E1E1E` |
 | Text | `#1A1A1A` | `#E8E8E8` |
-| Start, normal edges | `#333333` | `#B0B0B0` |
+| Normal edges and arrowheads | `#333333` | `#B0B0B0` |
+| Start, initial/final, step-number circles | `#2F2F2F` (white text) | `#5A5A5A` / `#8A8A8A` (light text) |
 | Client / user | `#DAE8FC` / `#6C8EBF` | `#1F3A5F` / `#6C9BD2` |
 | Step in this app, sub-flow, state | `#E1D5E7` / `#9673A6` | `#3B2A4F` / `#B39DDB` |
 | Decision | `#FFF2CC` / `#D6B656` | `#4A3F12` / `#E0C35A` |
@@ -189,7 +190,7 @@ Use **only** the colors in these tables. Any other color won't get a dark versio
 
 | Edge | draw.io style |
 |---|---|
-| Normal | `endArrow=block;endFill=1;html=1;strokeColor=#333333;fontColor=#1A1A1A;` |
+| Normal | `edgeStyle=none;rounded=1;arcSize=16;endArrow=block;endFill=1;html=1;strokeColor=#333333;fontColor=#1A1A1A;` (lines have **rounded corners**; every label has an explicit `fontColor` so dark mode can recolor it) |
 | Main success path | add `strokeColor=#1E8449;strokeWidth=2;` |
 | Error path | add `strokeColor=#B85450;` |
 | Async | add `dashed=1;endArrow=open;` |

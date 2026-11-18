@@ -34,7 +34,7 @@ TEMPLATE_VERSION = 2
 # Bumped when only the operator-guide humanizer rules change: re-humanize, don't regenerate.
 HUMANIZER_VERSION = 2
 # Bumped when only diagram rules change: redraw diagrams, keep the text.
-DIAGRAM_VERSION = 5
+DIAGRAM_VERSION = 6
 
 # Light colors used by diagrams.md §8 → their dark-palette counterparts (diagrams.md §8, dark column).
 DARK_FILL = {
@@ -43,15 +43,15 @@ DARK_FILL = {
     "#A9DFBF": "#1B4D2E", "#F8CECC": "#5C2323", "#FFF9DB": "#3D3820", "#E8F5E9": "#1B3A24",
     "#FDECEA": "#4A2020", "#FFFFFF": "#1E1E1E", "#1E8449": "#4CAF6E", "#B85450": "#E57373",
     "#000000": "#B0B0B0",
-    "#F0E2C8": "#3D3220", "#F2D7E9": "#4A2440", "#E2EFDA": "#263A1C", "#EEF3EE": "#2B332B",
+    "#2F2F2F": "#5A5A5A", "#F0E2C8": "#3D3220", "#F2D7E9": "#4A2440", "#E2EFDA": "#263A1C", "#EEF3EE": "#2B332B",
 }
 DARK_STROKE = {
     "#333333": "#B0B0B0", "#6C8EBF": "#6C9BD2", "#9673A6": "#B39DDB", "#D6B656": "#E0C35A",
     "#82B366": "#7BC47F", "#D79B00": "#F0A040", "#0E8088": "#4FC3C9", "#666666": "#9E9E9E",
     "#1E8449": "#4CAF6E", "#B85450": "#E57373", "#000000": "#B0B0B0",
-    "#A0844F": "#C9A86A", "#A65C8C": "#D58BBF", "#548235": "#8FC26A", "#7A8C7A": "#A3B5A3",
+    "#2F2F2F": "#8A8A8A", "#A0844F": "#C9A86A", "#A65C8C": "#D58BBF", "#548235": "#8FC26A", "#7A8C7A": "#A3B5A3",
 }
-DARK_TEXT = {"#1A1A1A": "#E8E8E8", "#000000": "#E8E8E8", "#FFFFFF": "#1A1A1A"}
+DARK_TEXT = {"#1A1A1A": "#E8E8E8", "#000000": "#E8E8E8", "#FFFFFF": "#F0F0F0"}
 DARK_BACKGROUND = "#1E1E1E"
 DOCS_DIR = "docs"
 
@@ -651,10 +651,15 @@ def _rgb(hex_color):
 
 def _theme_css(mode):
     """CSS appended to each diagram: light card always; dark palette only in adaptive mode."""
-    css = [":root { background-color: #FFFFFF; color-scheme: light; }"]
+    css = [":root { background-color: #FFFFFF; color-scheme: light; }",
+           # "Helvetica" alone falls back to a serif font where it isn't installed (Windows)
+           "foreignObject div, text { font-family: Helvetica, Arial, 'Liberation Sans', sans-serif !important; }"]
     if mode != "adaptive":
         return "\n".join(css)
-    rules = [":root { background-color: %s !important; }" % DARK_BACKGROUND]
+    rules = [":root { background-color: %s !important; }" % DARK_BACKGROUND,
+             # every label light by default, including labels whose color draw.io left unset
+             "foreignObject div { color: %s !important; }" % DARK_TEXT["#1A1A1A"],
+             "text { fill: %s !important; }" % DARK_TEXT["#1A1A1A"]]
     for light, dark in DARK_FILL.items():
         rules.append('[fill="%s" i], [fill="%s"] { fill: %s !important; }' % (light, _rgb(light), dark))
         rules.append('[style*="background-color: %s" i], [style*="background-color: %s"] { background-color: %s !important; }'

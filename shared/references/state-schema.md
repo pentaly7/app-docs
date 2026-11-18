@@ -13,7 +13,7 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 {
   "template_version": 2,
   "humanizer_version": 2,
-  "diagram_version": 5,
+  "diagram_version": 6,
   "split_all": false,
   "apps": {
     "payment-api": {
