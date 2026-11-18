@@ -74,20 +74,25 @@ Where config is loaded: `internal/config/config.go:20-61`.
 
 **Flowchart**
 
-![Create payment — flowchart](diagrams/create-payment.flow.drawio.svg)
+![Create payment: flowchart](diagrams/create-payment.flow.drawio.svg)
 
 <one image per sub-flow, captioned "Sub-flow ▶ <name>:">
 
-**Sequence**
-
-![Create payment — sequence](diagrams/create-payment.seq.drawio.svg)
-
+<steps in the order the flowchart shows them; the flowchart itself has no numbers:>
 1. `PaymentHandler.Create` validates the body (`internal/handler/payment.go:42-60`); 400 on missing `order_id`.
 2. `PaymentService.Create` locks the order row (`internal/service/payment.go:30-55`) …
 3. …
 
 **Errors:** <every error branch in the flowchart: where it's produced (path:line), what the caller gets>
 **Side effects:** <rows written, events published, external calls>
+
+**Sequence**
+
+![Create payment: sequence](diagrams/create-payment.seq.drawio.svg)
+
+<The story of the sequence in lettered paragraphs, one per phase or decision, each ending with the arrows it covers (diagrams.md §5):>
+**a. Receive and validate.** The client posts the payment. `PaymentHandler.Create` checks the body and answers 400 right away when `order_id` is missing. *(arrows 1–3)*
+**b. …** *(arrows 4–7)*
 
 <!-- docgen:section id="state-machine" -->
 ## State machines          ← only when the app has fsm on and a machine was found (state-machines.md §6)

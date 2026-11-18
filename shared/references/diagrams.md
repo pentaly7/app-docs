@@ -1,4 +1,4 @@
-# Diagrams (diagram version 6)
+# Diagrams (diagram version 8)
 
 Diagrams are the first thing readers look at, so they carry the detail. They are **colorful, complete and exact**: every branch the code can take, real names, real values. The validator checks the parts marked **[checked]**.
 
@@ -43,9 +43,9 @@ python3 <Shared>/scripts/diagram_layout.py docs/.docgen/.work/<diagram-id>.json 
 ```
 
 What the script guarantees, so you don't have to:
-- **Flowcharts:** the happy path (`"spine": true`) is one straight vertical column. A decision's other branches leave **sideways** to an end point on the same row. Notes sit **left** of the shape they explain, joined by a dashed line. Error paths that continue to a later step (`"kind": "rejoin"`) run down **one shared channel** on the right instead of crossing the diagram.
+- **Flowcharts:** **top-down**, with **rounded** line corners and **no step numbers**. The happy path (`"spine": true`) is one dead-straight vertical column. A decision's branch that simply **ends** (success/error end, storage, external system) goes to the row **below**. A branch that **goes on** to more steps goes **right** on the same row and becomes its own column, which runs down in turn, with its notes on its right. Lines end on the diamond's edge. Notes sit **left** of the shape they explain, joined by a dashed line without an arrow. The script reports shapes with more than 3 lines of text (`long_labels`). Error paths that continue to a later step (`"kind": "rejoin"`) run down **one shared channel** on the right instead of crossing the diagram.
 - **Data-flow / structure:** zones (Callers, the app, External systems, Storage) as labelled containers, top to bottom in the direction the data moves. Data going back to an earlier zone doesn't reorder them.
-- **Sequence:** one row per message, columns wide enough for every label, and a **numbered dark circle** at the start of every message, like Mermaid's `autonumber`. A self-call's label sits to the right of its loop, and `alt`/`opt`/`loop` boxes widen to fit their labels, so no label lands on another or under a circle.
+- **Sequence:** one row per message and a **numbered dark circle** at the start of every arrow (like Mermaid's `autonumber`). Participants drawn as what they are (a person for callers, a cylinder for databases, a cloud for external systems). **Arrows colored by meaning**: green happy path, red errors and early exits, the storage color for database/file/bucket/cache access, grey for external systems; replies dashed in the same color. **Phase bands** behind groups of messages, **activation bars** while a participant is busy, `alt`/`opt`/`break` boxes **tinted** green or red, and yellow **notes** beside a lifeline. Self-call labels sit right of their loop, and boxes widen to fit their labels.
 - **Labels:** every line label is moved along its own line to a spot that doesn't touch a shape, another label or another line. Sideways lines get room for their label.
 - **All:** the colors in section 8 and a legend of exactly the kinds used.
 
@@ -102,17 +102,31 @@ A flowchart shows **what decides what** inside the flow. Trace the code path and
 
 Every path ends at a **success terminal** or an **error terminal**, or visibly rejoins another path. A decision diamond has every outgoing edge labelled with its condition (`valid`, `invalid → 400`, `order not found → 404`, `retry < 3`).
 
-**Decision labels are short**, at most about 5 words (`issuer allowed?`, `state == 1 and not today?`). When the real condition is longer (several `and`/`or` parts, a list of values), put the **full condition in a Note** beside the diamond, connected with a dashed line without an arrow, and keep the short label in the diamond. Long text inside a diamond overflows its shape. Number the main-path steps so they match the numbered steps in the text (`1.`, `2.`…).
+**Decision labels are short**, at most about 5 words (`issuer allowed?`, `state == 1 and not today?`). When the real condition is longer (several `and`/`or` parts, a list of values), put the **full condition in a Note** beside the diamond, connected with a dashed line without an arrow, and keep the short label in the diamond. Long text inside a diamond overflows its shape. **No step numbers in flowcharts.** Shapes say what happens. The steps in the text follow the flowchart top to bottom, without referring to numbers.
+
+**Keep it readable:**
+- **Down, and right for branches that go on.** A branch ending in a success/error end goes to the row below. A branch that continues with more steps (another decision, a fallback) goes right on the same row and runs down as its own column. The script works this out from the edges. Nothing goes up, except `rejoin` lines, which run down the shared channel and enter their target from above.
+- **At most 3 lines of text per shape.** Keep the short part in the shape (`2. INSERT row`, with a timeout key or function name if it matters) and move the rest into a note. The script lists shapes over the limit in `long_labels`. Fix those and run it again.
+- **Identical logic drawn twice is drawn once.** When parallel or repeated branches run the same steps (writing two log tables, with the same validation and fallback), draw the shared steps **once** as a `shared.<sub-id>` sub-flow. Point each branch at it with a sub-flow node that says which instance it is (`▶ Write row with SAF fallback: ISO_LOG via InsertSingleLogIso`).
 
 ## 5. Sequence diagrams
 
-A sequence diagram shows **who calls whom, in order**, for the same flow. One per important flow.
+A sequence diagram shows **who calls whom, in order**, for the same flow. One per important flow. It should read like a story in pictures, so the script makes it rich. You decide what's in it:
 
-- Participants left to right in call order: caller, this app (split into its main layers when it helps: handler, service, repository), other internal apps, datastores, queues, external systems. Each participant head is colored by kind (section 8).
-- Messages: **synchronous call** = solid line, filled arrowhead. **Async message** (publish, enqueue, fire-and-forget) = solid line, open arrowhead. **Reply** = dashed line, open arrowhead. Error replies are red.
-- Label each message with its number and content: `3. INSERT payments (order_id, amount, status=PENDING)`, `5. POST /v2/charge {order_id, gross_amount}`, `6. 201 {transaction_id}`.
-- Use `alt` / `opt` / `loop` frames for the branches from the flowchart that involve other participants (timeout, retry loop, not found), each frame labelled with its condition.
-- Layout comes from `diagram_layout.py` (section 2): every message gets its own row with a numbered circle where it starts. The numbers match the numbered steps in the text.
+- **Participants** left to right in call order: caller, this app (split into its main layers when it helps: handler, service, repository), other internal apps, datastores, queues, external systems. Give each its real `kind`: the header is drawn as a person (`client`), a cylinder (`db`), a folder (`file`), a bucket (`object`), a hexagon (`cache`), a cloud (`external`), or a box (`step`, `internal`).
+- **Phases:** group the messages into 3–6 phases that name what is happening (`Receive & validate`, `Call Tibco`, `Map response`, `Write logs`, `Respond`). Each phase is a colored band with its name on the left.
+- **Early exits are `break`, never nested `alt`.** "If the api_key is wrong, reply 401 and stop" is one small `break` box at that spot, and the happy path continues below it, unnested. Use `alt` only for two outcomes that both continue (Tibco error vs. 2xx reply), and give each block a `tone` (`ok` green, `error` red).
+- **Message kinds:** `sync` (call), `async` (publish, enqueue), `reply`, `error`. Colors follow automatically: green for the happy path, red for errors, storage colors for storage access, grey for external systems.
+- **Short arrow labels**, with the key detail in a **note** beside the lifeline: `{"note": "timeout CLIENT.TIBCO.TIMEOUT", "over": "svc"}`.
+- Activation bars and arrow numbers are automatic.
+
+**The story under the diagram.** The arrow numbers belong to the diagram. The text tells the story in **lettered** paragraphs, so the two numbering systems never mix. Each paragraph covers one phase or one decision, in plain sentences, and ends with the arrows it covers:
+
+> **a. Receive and validate.** The caller sends the inquiry with its api_key. The handler starts a transaction log, then checks the key, the content type and the required fields. Any failure answers right away (401, 422/400 or 500) and nothing else happens. *(arrows 1–5)*
+>
+> **b. Call Tibco.** …  *(arrows 6–9)*
+
+User Guide: the same, in Bahasa Indonesia, ending with *(panah 1–5)*.
 
 ## 6. Structure, startup, data-flow
 
@@ -127,7 +141,7 @@ Put the facts a reader would otherwise have to dig out of code **in the diagram*
 | Element | Show |
 |---|---|
 | Entry | HTTP method + path, or topic/queue name, or cron schedule, or CLI command |
-| Process step | step number, what it does, and the function/class (`2. Lock order: OrderRepo.LockForUpdate`) |
+| Process step | what it does, and the function/class (`Lock order: OrderRepo.LockForUpdate`) |
 | Decision | the actual condition (`amount <= 0?`, `status == PAID?`) |
 | Datastore | table and the operation with columns (`payments: INSERT id, order_id, amount, status=PENDING`) |
 | Queue/topic | name and payload fields (`order.created {order_id, total, items[]}`) |
@@ -313,7 +327,10 @@ One JSON file per diagram. Full worked examples (a real flowchart with notes and
 }
 ```
 
+- Participant `kind`: `client` `step` `internal` `external` `db` `file` `object` `cache` `store` `queue`.
 - Message `kind`: `sync` (default) · `async` · `reply` · `error`. A message to the same participant draws a self-loop.
-- Frames: `"frame": "alt" | "opt" | "loop"` with a condition `label`, nested `steps`, and for `alt` any `else` blocks.
-- Messages are numbered automatically in order, frames included. Write the numbered steps in the text to match.
+- Phases: `{"phase": "Call Tibco", "steps": [...]}` at the top level, wrapping the steps of that phase.
+- Frames: `"frame": "break" | "alt" | "opt" | "loop"` with a condition `label`, nested `steps`, and for `alt` any `else` blocks. Optional `"tone": "ok" | "error" | "neutral"` on a frame or an `else` block (`break` is red by default).
+- Notes: `{"note": "timeout CLIENT.TIBCO.TIMEOUT", "over": "<participant id>"}`, drawn beside that lifeline at that point.
+- Arrows are numbered automatically in order. The story under the diagram refers to them by number, with lettered paragraphs (section 5).
 

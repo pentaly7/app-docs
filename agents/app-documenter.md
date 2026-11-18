@@ -74,7 +74,8 @@ Your prompt includes this app's drift: stale sections with reasons, renamed, del
 ## Mode: redraw
 
 The diagram rules changed, the code didn't. Redraw **every** diagram of this app under the current `diagrams.md`, from what the docs already say plus the code they cite. Re-open the code when a diagram needs a detail the text doesn't have (a branch condition, a column list).
-- Keep the text, subtitles and section state as they are. Change embeds and captions only when a diagram's file name or count changes (for example a new sub-flow file).
+- Keep the text, subtitles and section state as they are, with one exception: the arrow numbers of a redrawn sequence diagram change, so **rewrite each sequence story** (the lettered paragraphs under it, diagrams.md §5) in both docs to match. Change embeds and captions only when a diagram's file name or count changes (for example a new sub-flow or shared sub-flow file).
+- In your summary, list the sections whose User Guide text you rewrote, so the orchestrator can humanize them.
 - Remove diagram files that are no longer embedded anywhere.
 - Update each section's `diagram` field in the app state.
 - Self-check as in fresh mode.

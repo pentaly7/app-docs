@@ -80,6 +80,10 @@ Add `fsm` once (`/app-docs:generate fsm`) and every app in the repo gets state m
 
 ## Upgrading
 
+From 2.7.0: the next `/app-docs:generate drawio` redraws flowcharts without step numbers, with branches that continue in their own column to the right (text untouched).
+
+From 2.6.1: the next `/app-docs:generate drawio` redraws every diagram top-down, with richer sequence diagrams (phases, `break` boxes, colored arrows, activation bars, participant shapes, notes), and rewrites each sequence story as lettered paragraphs. The rest of the text is untouched.
+
 From 2.6.0: the next `/app-docs:generate drawio` redraws diagrams with rounded lines, readable labels in dark mode, and fixed sequence label placement (text untouched).
 
 From 2.5: "Panduan Operator" is now titled "User Guide" (content stays Indonesian). The next generate or sync renames existing titles automatically, in the files and in Docmost.

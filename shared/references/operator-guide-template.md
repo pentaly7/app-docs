@@ -76,11 +76,15 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 **Flowchart**
 <flowchart + sub-flows>
 
+1. Data request diperiksa lebih dulu. Jika `order_id` kosong, response `400`.
+2. …
+
 **Sequence**
 <sequence diagram>
 
-1. Data request diperiksa lebih dulu. Jika `order_id` kosong, response `400`.
-2. …
+<Cerita sequence dalam paragraf berhuruf, satu per fase atau keputusan, masing-masing diakhiri panah yang dicakup:>
+**a. Terima dan validasi.** Client mengirim request pembayaran. Jika `order_id` kosong, aplikasi langsung menjawab `400` dan proses berhenti. *(panah 1–3)*
+**b. …** *(panah 4–7)*
 
 **Tanda berhasil:** <row baru di tabel `payments` status `PENDING`, log `payment created`>
 **Jika gagal:** <gejala, penyebab yang paling mungkin, lalu apa yang diperiksa, untuk setiap cabang error di flowchart>

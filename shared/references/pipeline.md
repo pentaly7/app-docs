@@ -65,7 +65,7 @@ Each app moves through stages, recorded in `state.json → apps.<id>.stage`. **W
 | `reviewed` | app-documenter, mode `fix` | `fixed` |
 | `fixed` | operator-humanizer on the operator guide; then svg-theme, validate | `done` |
 | `done` + drift found, or FSM newly enabled | app-documenter `update` → goldfish-reviewer (changed sections only) → app-documenter `fix` → operator-humanizer (changed operator sections only) → svg-theme → validate | `done` |
-| `redraw` (set when only `diagram_changed`) | app-documenter `redraw` → svg-theme → validate | `done` |
+| `redraw` (set when only `diagram_changed`) | app-documenter `redraw` → operator-humanizer (the User Guide sections it rewrote) → svg-theme → validate | `done` |
 | `done` + humanizer version changed, code unchanged | operator-humanizer on the whole operator guide → validate | `done` |
 
 A `redraw` needs the same diagram mode the diagrams were made in. If the app's sections record `diagram: drawio` but this run is in Mermaid mode, skip the redraw for that app, keep `diagram_version` unchanged, and tell the user to rerun with `drawio`, instead of turning draw.io diagrams into Mermaid or marking them all outdated.

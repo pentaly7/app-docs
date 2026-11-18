@@ -34,7 +34,7 @@ TEMPLATE_VERSION = 2
 # Bumped when only the operator-guide humanizer rules change: re-humanize, don't regenerate.
 HUMANIZER_VERSION = 2
 # Bumped when only diagram rules change: redraw diagrams, keep the text.
-DIAGRAM_VERSION = 6
+DIAGRAM_VERSION = 8
 
 # Light colors used by diagrams.md §8 → their dark-palette counterparts (diagrams.md §8, dark column).
 DARK_FILL = {

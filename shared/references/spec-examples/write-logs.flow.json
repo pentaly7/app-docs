@@ -1,0 +1,78 @@
+{
+ "type": "flowchart",
+ "title": "Write ISO log + Geneva log",
+ "nodes": [
+  {
+   "id": "s",
+   "kind": "start",
+   "spine": true,
+   "label": "▶ Write ISO log + Geneva log\n(deferred in Inquiry and Payment)"
+  },
+  {
+   "id": "fork",
+   "kind": "step",
+   "spine": true,
+   "label": "Run both writes in parallel\nsync.WaitGroup, context.WithoutCancel"
+  },
+  {
+   "id": "fork-note",
+   "kind": "note",
+   "note_for": "fork",
+   "label": "The service waits for both writes, then returns its response. A failed write never changes the response."
+  },
+  {
+   "id": "iso",
+   "kind": "subflow",
+   "label": "▶ Write row with SAF fallback\nISO_LOG"
+  },
+  {
+   "id": "gen",
+   "kind": "subflow",
+   "label": "▶ Write row with SAF fallback\nGENEVA_CUST_TRANS"
+  },
+  {
+   "id": "join",
+   "kind": "step",
+   "spine": true,
+   "label": "Wait for both (wg.Wait)"
+  },
+  {
+   "id": "ok",
+   "kind": "ok",
+   "spine": true,
+   "label": "Service returns its response"
+  }
+ ],
+ "edges": [
+  {
+   "from": "s",
+   "to": "fork",
+   "kind": "success"
+  },
+  {
+   "from": "fork",
+   "to": "iso",
+   "kind": "success"
+  },
+  {
+   "from": "fork",
+   "to": "gen",
+   "kind": "success"
+  },
+  {
+   "from": "iso",
+   "to": "join",
+   "kind": "success"
+  },
+  {
+   "from": "gen",
+   "to": "join",
+   "kind": "success"
+  },
+  {
+   "from": "join",
+   "to": "ok",
+   "kind": "success"
+  }
+ ]
+}

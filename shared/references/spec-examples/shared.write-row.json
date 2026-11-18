@@ -1,0 +1,170 @@
+{
+ "type": "flowchart",
+ "title": "Write row with SAF fallback",
+ "nodes": [
+  {
+   "id": "s",
+   "kind": "start",
+   "spine": true,
+   "label": "▶ Write row with SAF fallback\n(ISO_LOG or GENEVA_CUST_TRANS)"
+  },
+  {
+   "id": "d1",
+   "kind": "decision",
+   "spine": true,
+   "label": "transmissionDate valid?"
+  },
+  {
+   "id": "n1",
+   "kind": "note",
+   "note_for": "d1",
+   "label": "GetCurrentYearForBit7: at least 4 chars and the first 4 parse as MMDD. Otherwise the insert returns \"failed to get current year for bit7\"."
+  },
+  {
+   "id": "e1",
+   "kind": "err",
+   "label": "slog.Error \"error insert ...\"\nrow lost (not queued)"
+  },
+  {
+   "id": "ins",
+   "kind": "step",
+   "spine": true,
+   "label": "INSERT row\ntimeout DATABASE.ORACLE.TIMEOUT"
+  },
+  {
+   "id": "db",
+   "kind": "db",
+   "label": "ISO_LOG or\nGENEVA_CUST_TRANS"
+  },
+  {
+   "id": "d2",
+   "kind": "decision",
+   "spine": true,
+   "label": "INSERT ok?"
+  },
+  {
+   "id": "ok1",
+   "kind": "ok",
+   "spine": true,
+   "label": "Row written"
+  },
+  {
+   "id": "d3",
+   "kind": "decision",
+   "label": "connection-type error?"
+  },
+  {
+   "id": "n3",
+   "kind": "note",
+   "note_for": "d3",
+   "label": "isConnErr: driver.ErrBadConn, context.DeadlineExceeded, or ORA-01017, 12170, 12514, 12541, 12560, 24418."
+  },
+  {
+   "id": "e3",
+   "kind": "err",
+   "label": "slog.Error \"error insert ...\"\nrow lost (not queued)"
+  },
+  {
+   "id": "saf",
+   "kind": "step",
+   "label": "safOnErr: append \"op|json\"\nto the SAF file"
+  },
+  {
+   "id": "file",
+   "kind": "file",
+   "label": "SAF file\nlogs/myim3-http-gateway/SAF/SAF"
+  },
+  {
+   "id": "d4",
+   "kind": "decision",
+   "label": "SAF append ok?"
+  },
+  {
+   "id": "ok2",
+   "kind": "ok",
+   "label": "Queued to SAF, replayed later\nrow kept"
+  },
+  {
+   "id": "e4",
+   "kind": "err",
+   "label": "Insert + SAF error joined\nrow lost"
+  }
+ ],
+ "edges": [
+  {
+   "from": "s",
+   "to": "d1",
+   "kind": "success"
+  },
+  {
+   "from": "d1",
+   "to": "e1",
+   "kind": "error",
+   "label": "no"
+  },
+  {
+   "from": "d1",
+   "to": "ins",
+   "kind": "success",
+   "label": "yes"
+  },
+  {
+   "from": "ins",
+   "to": "db",
+   "kind": "normal",
+   "label": "INSERT"
+  },
+  {
+   "from": "ins",
+   "to": "d2",
+   "kind": "success"
+  },
+  {
+   "from": "d2",
+   "to": "ok1",
+   "kind": "success",
+   "label": "yes"
+  },
+  {
+   "from": "d2",
+   "to": "d3",
+   "kind": "error",
+   "label": "no"
+  },
+  {
+   "from": "d3",
+   "to": "e3",
+   "kind": "error",
+   "label": "no"
+  },
+  {
+   "from": "d3",
+   "to": "saf",
+   "kind": "normal",
+   "label": "yes"
+  },
+  {
+   "from": "saf",
+   "to": "file",
+   "kind": "normal",
+   "label": "append"
+  },
+  {
+   "from": "saf",
+   "to": "d4",
+   "kind": "normal"
+  },
+  {
+   "from": "d4",
+   "to": "ok2",
+   "kind": "normal",
+   "label": "yes"
+  },
+  {
+   "from": "d4",
+   "to": "e4",
+   "kind": "error",
+   "label": "no"
+  }
+ ]
+}

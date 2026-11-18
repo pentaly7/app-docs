@@ -1,49 +1,373 @@
-{"type":"flowchart","title":"Inquiry: flowchart","nodes":[
- {"id":"s","kind":"start","spine":true,"label":"POST /inquiry\nIsoRequest JSON · header api_key"},
- {"id":"n1","kind":"step","spine":true,"label":"1. Logger middleware\nStartTransaction(rrn, \"inquiry\")\nlog request as step 1 (IN)"},
- {"id":"d2","kind":"decision","spine":true,"label":"2. api_key valid?"},
- {"id":"k2","kind":"note","note_for":"d2","label":"Server.auth: header api_key must equal SERVER.API_KEY. An empty SERVER.API_KEY accepts a request with no header."},
- {"id":"e401","kind":"err","label":"401 {message: invalid api key}\nno ISO / Geneva row written"},
- {"id":"d3","kind":"decision","spine":true,"label":"3. Content-Type JSON?"},
- {"id":"k3","kind":"note","note_for":"d3","label":"Bind().WithAutoHandling().Body(): a missing or non-JSON Content-Type is rejected before parsing."},
- {"id":"e422","kind":"err","label":"422 Unprocessable Entity\n(text/plain)"},
- {"id":"d3b","kind":"decision","spine":true,"label":"4. body parses?"},
- {"id":"k3b","kind":"note","note_for":"d3b","label":"Malformed JSON or a field of the wrong type fails the bind into InquiryRequest."},
- {"id":"e400","kind":"err","label":"400 \"Bad request: ...\"\n(text/plain)"},
- {"id":"n4","kind":"step","spine":true,"label":"5. Service.Inquiry\ntransid = TRANS_ID_PREFIX + rrn\nmsisdn = normalised billData.customerId (62...)\ndefer: run ISO + Geneva writers on every return"},
- {"id":"n6","kind":"step","spine":true,"label":"6. tibco.Client.Inquiry\nPOST INQUIRY_URL {transid, msisdn, channel}\nheader api_key · timeout CLIENT.TIBCO.TIMEOUT"},
- {"id":"tx","kind":"external","label":"Tibco postpaid API"},
- {"id":"d6a","kind":"decision","spine":true,"label":"7. dial or DNS error?"},
- {"id":"k6a","kind":"note","note_for":"d6a","label":"ErrUnreachable: the request never reached Tibco (net.OpError op=dial or net.DNSError)."},
- {"id":"x89","kind":"step","label":"respCode = 89 (link down)"},
- {"id":"d6b","kind":"decision","spine":true,"label":"8. no usable reply?"},
- {"id":"k6b","kind":"note","note_for":"d6b","label":"ErrNoResponse: any other transport error or timeout, body read error, non-2xx status (4xx too) or non-JSON body."},
- {"id":"x68a","kind":"step","label":"respCode = 68 (timeout)"},
- {"id":"d6c","kind":"decision","spine":true,"label":"9. other error?"},
- {"id":"k6c","kind":"note","note_for":"d6c","label":"JSON marshal error or an unparsable URL while building the request (nothing is logged for it)."},
- {"id":"x05","kind":"step","label":"respCode = 05 (general error)"},
- {"id":"d7","kind":"decision","spine":true,"label":"10. status in RC map?"},
- {"id":"k7","kind":"note","note_for":"d7","label":"configStore.Artajasa(status): in-memory map loaded from POSTPAID_TIBCO_MAPPING_RC."},
- {"id":"x68b","kind":"step","label":"slog \"failed to get rc artajasa\"\nrespCode = 68"},
- {"id":"d8","kind":"decision","spine":true,"label":"11. name or ref too long?"},
- {"id":"k8","kind":"note","note_for":"d8","label":"NewBillData pads customerName to 30 and billReference to 11 bytes. A longer value makes strings.Repeat panic (negative count)."},
- {"id":"e500","kind":"err","label":"500 text/plain \"strings: negative Repeat count\"\nrecover; ISO / Geneva rows still written"},
- {"id":"n8","kind":"step","spine":true,"label":"12. respCode = mapped RC\nbillData = NewBillData(...)\nadditionalData = baNumber, billDay, statusDirectDebit, samuNumber"},
- {"id":"sub","kind":"subflow","spine":true,"label":"13. ▶ Write ISO log + Geneva log"},
- {"id":"ok","kind":"ok","spine":true,"label":"14. HTTP 200 {mti_res 0210, respCode, billData, additionalData}\n(200 even when respCode is an error)"}
-],"edges":[
- {"from":"s","to":"n1","kind":"success"},{"from":"n1","to":"d2","kind":"success"},
- {"from":"d2","to":"e401","kind":"error","label":"no"},{"from":"d2","to":"d3","kind":"success","label":"yes"},
- {"from":"d3","to":"e422","kind":"error","label":"no"},{"from":"d3","to":"d3b","kind":"success","label":"yes"},
- {"from":"d3b","to":"e400","kind":"error","label":"no"},{"from":"d3b","to":"n4","kind":"success","label":"yes"},
- {"from":"n4","to":"n6","kind":"success"},{"from":"n6","to":"tx","kind":"normal","label":"POST"},
- {"from":"n6","to":"d6a","kind":"success"},
- {"from":"d6a","to":"x89","kind":"error","label":"yes"},{"from":"d6a","to":"d6b","kind":"success","label":"no"},
- {"from":"d6b","to":"x68a","kind":"error","label":"yes"},{"from":"d6b","to":"d6c","kind":"success","label":"no"},
- {"from":"d6c","to":"x05","kind":"error","label":"yes"},{"from":"d6c","to":"d7","kind":"success","label":"no"},
- {"from":"d7","to":"x68b","kind":"error","label":"no"},{"from":"d7","to":"d8","kind":"success","label":"yes"},
- {"from":"d8","to":"e500","kind":"error","label":"yes"},{"from":"d8","to":"n8","kind":"success","label":"no"},
- {"from":"n8","to":"sub","kind":"success"},{"from":"sub","to":"ok","kind":"success"},
- {"from":"x89","to":"sub","kind":"rejoin"},{"from":"x68a","to":"sub","kind":"rejoin"},
- {"from":"x05","to":"sub","kind":"rejoin"},{"from":"x68b","to":"sub","kind":"rejoin"}
-]}
+{
+ "type": "flowchart",
+ "title": "Inquiry: flowchart",
+ "nodes": [
+  {
+   "id": "s",
+   "kind": "start",
+   "spine": true,
+   "label": "POST /inquiry\nIsoRequest JSON · header api_key"
+  },
+  {
+   "id": "n1",
+   "kind": "step",
+   "spine": true,
+   "label": "Logger middleware\nStartTransaction(rrn, \"inquiry\")"
+  },
+  {
+   "id": "n1-note",
+   "kind": "note",
+   "note_for": "n1",
+   "label": "Logs the request as step 1 (IN) before any check."
+  },
+  {
+   "id": "d2",
+   "kind": "decision",
+   "spine": true,
+   "label": "api_key valid?"
+  },
+  {
+   "id": "k2",
+   "kind": "note",
+   "note_for": "d2",
+   "label": "Server.auth: header api_key must equal SERVER.API_KEY. An empty SERVER.API_KEY accepts a request with no header."
+  },
+  {
+   "id": "e401",
+   "kind": "err",
+   "label": "401 {message: invalid api key}\nno ISO / Geneva row written"
+  },
+  {
+   "id": "d3",
+   "kind": "decision",
+   "spine": true,
+   "label": "Content-Type JSON?"
+  },
+  {
+   "id": "k3",
+   "kind": "note",
+   "note_for": "d3",
+   "label": "Bind().WithAutoHandling().Body(): a missing or non-JSON Content-Type is rejected before parsing."
+  },
+  {
+   "id": "e422",
+   "kind": "err",
+   "label": "422 Unprocessable Entity\n(text/plain)"
+  },
+  {
+   "id": "d3b",
+   "kind": "decision",
+   "spine": true,
+   "label": "body parses?"
+  },
+  {
+   "id": "k3b",
+   "kind": "note",
+   "note_for": "d3b",
+   "label": "Malformed JSON or a field of the wrong type fails the bind into InquiryRequest."
+  },
+  {
+   "id": "e400",
+   "kind": "err",
+   "label": "400 \"Bad request: ...\"\n(text/plain)"
+  },
+  {
+   "id": "n4",
+   "kind": "step",
+   "spine": true,
+   "label": "Service.Inquiry\ntransid = TRANS_ID_PREFIX + rrn"
+  },
+  {
+   "id": "n4-note",
+   "kind": "note",
+   "note_for": "n4",
+   "label": "msisdn = normalised billData.customerId (62...). A deferred call runs the ISO + Geneva writers on every return."
+  },
+  {
+   "id": "n6",
+   "kind": "step",
+   "spine": true,
+   "label": "tibco.Client.Inquiry\nPOST INQUIRY_URL"
+  },
+  {
+   "id": "n6-note",
+   "kind": "note",
+   "note_for": "n6",
+   "label": "Body {transid, msisdn, channel}, header api_key, timeout CLIENT.TIBCO.TIMEOUT."
+  },
+  {
+   "id": "tx",
+   "kind": "external",
+   "label": "Tibco postpaid API"
+  },
+  {
+   "id": "d6a",
+   "kind": "decision",
+   "spine": true,
+   "label": "dial or DNS error?"
+  },
+  {
+   "id": "k6a",
+   "kind": "note",
+   "note_for": "d6a",
+   "label": "ErrUnreachable: the request never reached Tibco (net.OpError op=dial or net.DNSError)."
+  },
+  {
+   "id": "x89",
+   "kind": "step",
+   "label": "respCode = 89 (link down)"
+  },
+  {
+   "id": "d6b",
+   "kind": "decision",
+   "spine": true,
+   "label": "no usable reply?"
+  },
+  {
+   "id": "k6b",
+   "kind": "note",
+   "note_for": "d6b",
+   "label": "ErrNoResponse: any other transport error or timeout, body read error, non-2xx status (4xx too) or non-JSON body."
+  },
+  {
+   "id": "x68a",
+   "kind": "step",
+   "label": "respCode = 68 (timeout)"
+  },
+  {
+   "id": "d6c",
+   "kind": "decision",
+   "spine": true,
+   "label": "other error?"
+  },
+  {
+   "id": "k6c",
+   "kind": "note",
+   "note_for": "d6c",
+   "label": "JSON marshal error or an unparsable URL while building the request (nothing is logged for it)."
+  },
+  {
+   "id": "x05",
+   "kind": "step",
+   "label": "respCode = 05 (general error)"
+  },
+  {
+   "id": "d7",
+   "kind": "decision",
+   "spine": true,
+   "label": "status in RC map?"
+  },
+  {
+   "id": "k7",
+   "kind": "note",
+   "note_for": "d7",
+   "label": "configStore.Artajasa(status): in-memory map loaded from POSTPAID_TIBCO_MAPPING_RC."
+  },
+  {
+   "id": "x68b",
+   "kind": "step",
+   "label": "slog \"failed to get rc artajasa\"\nrespCode = 68"
+  },
+  {
+   "id": "d8",
+   "kind": "decision",
+   "spine": true,
+   "label": "name or ref too long?"
+  },
+  {
+   "id": "k8",
+   "kind": "note",
+   "note_for": "d8",
+   "label": "NewBillData pads customerName to 30 and billReference to 11 bytes. A longer value makes strings.Repeat panic (negative count)."
+  },
+  {
+   "id": "e500",
+   "kind": "err",
+   "label": "500 \"strings: negative Repeat count\""
+  },
+  {
+   "id": "n8",
+   "kind": "step",
+   "spine": true,
+   "label": "respCode = mapped RC\nbillData = NewBillData(...)"
+  },
+  {
+   "id": "n8-note",
+   "kind": "note",
+   "note_for": "n8",
+   "label": "additionalData = baNumber, billDay, statusDirectDebit, samuNumber."
+  },
+  {
+   "id": "sub",
+   "kind": "subflow",
+   "spine": true,
+   "label": "▶ Write ISO log + Geneva log"
+  },
+  {
+   "id": "ok",
+   "kind": "ok",
+   "spine": true,
+   "label": "HTTP 200 {mti_res 0210, respCode, billData}"
+  },
+  {
+   "id": "ok-note",
+   "kind": "note",
+   "note_for": "ok",
+   "label": "HTTP 200 even when respCode is an error."
+  }
+ ],
+ "edges": [
+  {
+   "from": "s",
+   "to": "n1",
+   "kind": "success"
+  },
+  {
+   "from": "n1",
+   "to": "d2",
+   "kind": "success"
+  },
+  {
+   "from": "d2",
+   "to": "e401",
+   "kind": "error",
+   "label": "no"
+  },
+  {
+   "from": "d2",
+   "to": "d3",
+   "kind": "success",
+   "label": "yes"
+  },
+  {
+   "from": "d3",
+   "to": "e422",
+   "kind": "error",
+   "label": "no"
+  },
+  {
+   "from": "d3",
+   "to": "d3b",
+   "kind": "success",
+   "label": "yes"
+  },
+  {
+   "from": "d3b",
+   "to": "e400",
+   "kind": "error",
+   "label": "no"
+  },
+  {
+   "from": "d3b",
+   "to": "n4",
+   "kind": "success",
+   "label": "yes"
+  },
+  {
+   "from": "n4",
+   "to": "n6",
+   "kind": "success"
+  },
+  {
+   "from": "n6",
+   "to": "tx",
+   "kind": "normal",
+   "label": "POST"
+  },
+  {
+   "from": "n6",
+   "to": "d6a",
+   "kind": "success"
+  },
+  {
+   "from": "d6a",
+   "to": "x89",
+   "kind": "error",
+   "label": "yes"
+  },
+  {
+   "from": "d6a",
+   "to": "d6b",
+   "kind": "success",
+   "label": "no"
+  },
+  {
+   "from": "d6b",
+   "to": "x68a",
+   "kind": "error",
+   "label": "yes"
+  },
+  {
+   "from": "d6b",
+   "to": "d6c",
+   "kind": "success",
+   "label": "no"
+  },
+  {
+   "from": "d6c",
+   "to": "x05",
+   "kind": "error",
+   "label": "yes"
+  },
+  {
+   "from": "d6c",
+   "to": "d7",
+   "kind": "success",
+   "label": "no"
+  },
+  {
+   "from": "d7",
+   "to": "x68b",
+   "kind": "error",
+   "label": "no"
+  },
+  {
+   "from": "d7",
+   "to": "d8",
+   "kind": "success",
+   "label": "yes"
+  },
+  {
+   "from": "d8",
+   "to": "e500",
+   "kind": "error",
+   "label": "yes"
+  },
+  {
+   "from": "d8",
+   "to": "n8",
+   "kind": "success",
+   "label": "no"
+  },
+  {
+   "from": "n8",
+   "to": "sub",
+   "kind": "success"
+  },
+  {
+   "from": "sub",
+   "to": "ok",
+   "kind": "success"
+  },
+  {
+   "from": "x89",
+   "to": "sub",
+   "kind": "rejoin"
+  },
+  {
+   "from": "x68a",
+   "to": "sub",
+   "kind": "rejoin"
+  },
+  {
+   "from": "x05",
+   "to": "sub",
+   "kind": "rejoin"
+  },
+  {
+   "from": "x68b",
+   "to": "sub",
+   "kind": "rejoin"
+  }
+ ]
+}
