@@ -120,9 +120,14 @@ A sequence diagram shows **who calls whom, in order**, for the same flow. One pe
 - **Short arrow labels**, with the key detail in a **note** beside the lifeline: `{"note": "timeout CLIENT.PARTNER.TIMEOUT", "over": "svc"}`.
 - Activation bars and arrow numbers are automatic.
 
-**The story under the diagram.** The arrow numbers belong to the diagram, and the text walks through them in detail. The story has one **lettered phase heading** per phase band (`a.`, `b.`, …), then **one line per arrow**, starting with the arrow's number as a circled digit (`①`–`⑳`; from 21 on, `(21)`, `(22)`…). Every arrow in the diagram gets its line, in order.
+**The story under the diagram.** The arrow numbers belong to the diagram, and the text walks through them in detail, in plain markdown that renders the same everywhere:
 
-Each arrow line says, where it applies:
+- One **bold heading per phase band**, with a **capital letter**: `**A. Receive and validate**`, `**B. Call the partner**`, …
+- Under it, a normal markdown **numbered list**, one item per arrow, and **the item number is the arrow number**. Phases cover consecutive arrows, so phase B's list simply starts where A's ended (`5.`, `6.`, …), and every number matches its circle in the diagram.
+- Leave a blank line between items, so each arrow reads as its own short paragraph.
+- Every arrow in the diagram gets its item, in order.
+
+Each item says, where it applies:
 - **what moves:** the call or message and the data passed (fields, headers, body shape)
 - **what decides:** the condition that picks this branch, and what happens on the other branch
 - **what is written or logged:** the table and columns, file and path, log message text and level
@@ -131,21 +136,35 @@ Each arrow line says, where it applies:
 - **errors:** what the caller gets on each error path, and whether anything else still happens (rows still written, nothing written)
 - **what outlives the request:** queued for replay, picked up by a cron job, an event others consume
 
-Errors (`break`, `alt`) are described **inside** their phase, on the line of the arrow that carries them.
+Errors (`break`, `alt`) are described **inside** their phase, in the item of the arrow that carries them.
 
-**Dev guide:** each arrow line carries its code reference **inline**, right after the part of the sentence it backs up: the repo-relative file and lines (`path:line` or `path:start-end`), validated like every code reference. A line that names two places in the code gets two references:
+**Dev guide:** each item carries its code references **inline**, in parentheses right after the part of the sentence they back up: repo-relative file and lines (`path:line` or `path:start-end`), validated like every code reference. A sentence that touches two places gets both:
 
-> **a. Receive and validate**
-> ① The caller sends `POST /inquiry` with an `InquiryRequest` JSON body and the `api_key` header, routed in `internal/server/router.go:41`.
-> ② The logger middleware starts a transaction (`StartTransaction(rrn, "inquiry")`, `internal/server/middleware/logger.go:18-37`) and logs the request as step 1 `IN` at INFO, before any check runs.
-> ③ If `api_key` doesn't equal `SERVER.API_KEY` (`internal/server/auth.go:22-35`), the handler answers `401 {message: "invalid api key"}`. No transaction-log or ledger row is written, and the flow stops here.
+```markdown
+**A. Receive and validate**
 
-**User Guide:** the same headings and arrow lines in Bahasa Indonesia, with no code references. Instead, each line adds what an operator sees and checks: the **log message** at that point (text and level), the **table or file** to look in, **how long** the step may take (timeout and its key), and **what the caller sees**:
+1. The caller sends `POST /inquiry` with an `InquiryRequest` JSON body and the `api_key` header (`internal/server/router.go:41`).
 
-> **a. Terima dan validasi**
-> ① Caller mengirim `POST /inquiry` berisi `InquiryRequest` dengan header `api_key`.
-> ② Request dicatat di log sebagai step 1 `IN` (level INFO) sebelum pemeriksaan apa pun.
-> ③ Jika `api_key` tidak sama dengan `SERVER.API_KEY`, caller menerima `401 {message: "invalid api key"}`. Tidak ada row di `TXN_LOG` maupun `LEDGER_TRANS`, dan proses berhenti di sini.
+2. The logger middleware starts a transaction and logs the request as step 1 `IN` at INFO, before any check runs (`internal/server/middleware/logger.go:18-37`).
+
+3. If `api_key` doesn't equal `SERVER.API_KEY`, the handler answers `401 {message: "invalid api key"}` (`internal/server/auth.go:22-35`). No transaction-log or ledger row is written, and the flow stops here.
+
+**B. Take the file**
+
+5. `drain` renames `SAF` to `SAF.loaded-<YYYY-MM-DD HH:MM:SS>` under the queue mutex (`internal/repository/saf.go:60`, `internal/repository/saf.go:162-167`). Producers that push after the rename create a fresh `SAF` file, and entries pushed during the drain wait for the next tick (`internal/repository/saf.go:131-159`).
+```
+
+**User Guide:** the same headings and numbered items in Bahasa Indonesia, with no code references. Instead, each item adds what an operator sees and checks: the **log message** at that point (text and level), the **table or file** to look in, **how long** the step may take (timeout and its key), and **what the caller sees**:
+
+```markdown
+**A. Terima dan validasi**
+
+1. Caller mengirim `POST /inquiry` berisi `InquiryRequest` dengan header `api_key`.
+
+2. Request dicatat di log sebagai step 1 `IN` (level INFO) sebelum pemeriksaan apa pun.
+
+3. Jika `api_key` tidak sama dengan `SERVER.API_KEY`, caller menerima `401 {message: "invalid api key"}`. Tidak ada row di `TXN_LOG` maupun `LEDGER_TRANS`, dan proses berhenti di sini.
+```
 
 The story can be long. Detail is the point here. The steps under the flowchart stay detailed too: they explain the **logic** (each decision and rule) top to bottom, and the story explains the **interaction** (who calls whom, with what, in what order).
 
@@ -353,5 +372,5 @@ One JSON file per diagram. Full worked examples (a real flowchart with notes and
 - Phases: `{"phase": "Call partner", "steps": [...]}` at the top level, wrapping the steps of that phase.
 - Frames: `"frame": "break" | "alt" | "opt" | "loop"` with a condition `label`, nested `steps`, and for `alt` any `else` blocks. Optional `"tone": "ok" | "error" | "neutral"` on a frame or an `else` block (`break` is red by default).
 - Notes: `{"note": "timeout CLIENT.PARTNER.TIMEOUT", "over": "<participant id>"}`, drawn beside that lifeline at that point.
-- Arrows are numbered automatically in order. The story under the diagram has one line per arrow, under lettered phase headings (section 5).
+- Arrows are numbered automatically in order. The story under the diagram is a numbered list whose item numbers are the arrow numbers, under capital-letter phase headings (section 5).
 

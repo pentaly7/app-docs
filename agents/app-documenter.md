@@ -75,7 +75,7 @@ Your prompt includes this app's drift: stale sections with reasons, renamed, del
 
 The rules for sequence stories changed. For every important flow, rewrite the story under its sequence diagram in **both** docs, following `diagrams.md` §5 exactly:
 - Re-read the code along the flow. Every arrow line must be true to the code at this commit, and every inline code reference must point at the lines that do it. Verify the line numbers against the file before you write them.
-- Give every arrow in the diagram its line, under the lettered phase headings, with the full detail list (data, conditions, writes and logs, limits, results, errors, what outlives the request).
+- Give every arrow in the diagram its numbered item (item number = arrow number), under the capital-letter phase headings, with the full detail list (data, conditions, writes and logs, limits, results, errors, what outlives the request).
 - User Guide: the same lines in Bahasa Indonesia, no code references, plus log messages, tables or files, time limits and what the caller sees.
 - Don't touch diagrams, other sections or subtitles. Don't change the arrow numbering. If the diagram is missing an arrow the code clearly makes, note it in your summary instead of redrawing.
 - In your summary, list the story sections you rewrote, so the orchestrator can humanize the User Guide ones.

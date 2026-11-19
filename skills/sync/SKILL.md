@@ -61,6 +61,12 @@ Diagrams carry a light and a dark palette and switch by the viewer's color schem
 
 Pages without draw.io diagrams (Mermaid only) skip this check, because Docmost renders Mermaid itself.
 
+### List number check (first sync, or when `docmost.list_numbers` is not set)
+
+Sequence stories are numbered lists whose numbers are the diagram's arrow numbers, so phase B's list may start at 5. Open a synced page with a sequence story and read its text (`get_page_text`). Find the first item under a phase heading other than `A.`:
+- It shows its own number (e.g. `5.`) → `TOOL sync-record --repo REPO --list-numbers native`.
+- Docmost restarted it at `1.` → `TOOL sync-record --repo REPO --list-numbers bold`, run `TOOL sync-plan --repo REPO` again (every page with a numbered list is now `changed`, and its prepared text uses bold numbers like `**5.**`), and continue with the new plan. The markdown files in GitLab keep their plain numbered lists.
+
 ## 4. Sync each page with `changed: true`, in plan order
 
 1. **Find or create the page**

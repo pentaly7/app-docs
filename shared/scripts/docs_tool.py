@@ -36,7 +36,7 @@ HUMANIZER_VERSION = 2
 # Bumped when only diagram rules change: redraw diagrams, keep the text.
 DIAGRAM_VERSION = 8
 # Bumped when only the sequence-story rules change: re-read the code and rewrite the stories.
-STORY_VERSION = 3
+STORY_VERSION = 4
 
 # Light colors used by diagrams.md §8 → their dark-palette counterparts (diagrams.md §8, dark column).
 DARK_FILL = {
@@ -97,7 +97,7 @@ DIAGRAM_SECTIONS = {
     "dev": {"structure": 1, "startup": 1, "data-flow": 1},
     "op": {"how-it-works": 2, "data-flow": 1},
 }
-STORY_LINE_RE = re.compile(r"^\s*(?:>\s*)?(?:[\u2460-\u2473]|\(\d+\))\s")   # ① … ⑳ or (21)
+STORY_LINE_RE = re.compile(r"^\s*(\d+)\.\s")   # story items: "5. …", the number is the arrow number
 DEV_ONLY_MARKS = ("**Unverified:**", "**Contradiction:**", "**Security finding:**")
 REQUIRED_SECTIONS = {
     "dev": ["overview", "structure", "setup", "startup", "app-flow", "data-flow", "dev-notes", "glossary"],
@@ -549,9 +549,9 @@ def cmd_validate(args):
                     # every arrow line of the story carries its code reference inline (diagrams.md §5)
                     seq_at = max(text.rfind(".seq."), text.rfind("sequenceDiagram"))
                     arrow_lines = [l for l in text[seq_at:].splitlines() if STORY_LINE_RE.match(l)]
-                    bare = [l.strip()[:1] for l in arrow_lines if not CODE_REF_RE.search(l)]
+                    bare = [STORY_LINE_RE.match(l).group(1) for l in arrow_lines if not CODE_REF_RE.search(l)]
                     if not arrow_lines:
-                        fail(doc_list[0].rel, 0, "story-missing", "section '%s': no arrow lines (① ②…) under the sequence diagram" % sid)
+                        fail(doc_list[0].rel, 0, "story-missing", "section '%s': no numbered arrow items under the sequence diagram" % sid)
                     elif bare:
                         fail(doc_list[0].rel, 0, "story-code-missing", "section '%s': arrow lines without an inline file:line reference: %s" % (sid, " ".join(bare)))
 
@@ -820,12 +820,21 @@ def cmd_readme_plan(args):
 
 # ---------------------------------------------------------------- sync
 
-def _prepare_markdown(path):
+NUMBERED_ITEM_RE = re.compile(r"^(\s*)(\d+)\.\s+")
+
+
+def _prepare_markdown(path, bold_numbers=False):
     """Strip docgen anchors and the H1; swap drawio images for upload placeholders. Returns (text, [abs image paths])."""
     images = []
     out = []
     title_dropped = False
+    in_fence = False
     for line in Path(path).read_text(encoding="utf-8").splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+        if bold_numbers and not in_fence:
+            # Docmost renumbered lists from 1 at calibration: keep arrow numbers as plain bold text
+            line = NUMBERED_ITEM_RE.sub(lambda m: "%s**%s.** " % (m.group(1), m.group(2)), line)
         if ANCHOR_RE.match(line.strip()):
             continue
         if not title_dropped and line.startswith("# "):
@@ -922,6 +931,7 @@ def cmd_sync_plan(args):
     repo = Path(args.repo).resolve()
     state = load_json(repo / DOCS_DIR / ".docgen" / "state.json")
     synced = state.get("docmost", {}).get("pages", {})
+    bold_numbers = state.get("docmost", {}).get("list_numbers") == "bold"
     work = repo / DOCS_DIR / ".docgen" / ".work" / "sync"
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
@@ -929,7 +939,7 @@ def cmd_sync_plan(args):
 
     def add(key, parent, title, source=None):
         # Title is part of the hash, so a renamed page is re-synced even when its body didn't change.
-        text, images = _prepare_markdown(source) if source else ("", [])
+        text, images = _prepare_markdown(source, bold_numbers) if source else ("", [])
         digest = hashlib.sha256((title + "\n" + text).encode())
         for image in images:
             digest.update(Path(image).read_bytes() if Path(image).is_file() else b"missing")
@@ -986,6 +996,8 @@ def cmd_sync_record(args):
         docmost["method"] = args.method
     if args.diagram_theme:
         docmost["diagram_theme"] = args.diagram_theme
+    if args.list_numbers:
+        docmost["list_numbers"] = args.list_numbers
     if args.key:
         page = docmost.setdefault("pages", {}).setdefault(args.key, {})
         if args.url:
@@ -1022,6 +1034,7 @@ def main():
     p.add_argument("--root-url")
     p.add_argument("--method")
     p.add_argument("--diagram-theme", choices=["adaptive", "light"])
+    p.add_argument("--list-numbers", choices=["native", "bold"])
     p = sub.add_parser("svg-theme")
     p.add_argument("--repo", default=".")
     p.add_argument("--app")

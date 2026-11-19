@@ -90,12 +90,14 @@ Where config is loaded: `internal/config/config.go:20-61`.
 
 ![Create payment: sequence](diagrams/create-payment.seq.drawio.svg)
 
-<The detailed story (diagrams.md §5): a lettered heading per phase, one line per arrow (① ②…), each with its code reference inline:>
-**a. Receive and validate**
-① The client sends `POST /v1/payments` with `{order_id, amount}` and a bearer token, routed in `internal/router.go:22`.
-② `PaymentHandler.Create` validates the body (`internal/handler/payment.go:42-60`). If `order_id` is missing it answers `400 {error: "order_id required"}` and nothing is written.
+<The detailed story (diagrams.md §5): a bold capital-letter heading per phase, then a numbered list whose item numbers are the arrow numbers, each item with its code references inline:>
+**A. Receive and validate**
 
-**b. …**
+1. The client sends `POST /v1/payments` with `{order_id, amount}` and a bearer token (`internal/router.go:22`).
+
+2. `PaymentHandler.Create` validates the body. If `order_id` is missing it answers `400 {error: "order_id required"}` and nothing is written (`internal/handler/payment.go:42-60`).
+
+**B. …**
 
 <!-- docgen:section id="state-machine" -->
 ## State machines          ← only when the app has fsm on and a machine was found (state-machines.md §6)

@@ -80,6 +80,8 @@ Add `fsm` once (`/app-docs:generate fsm`) and every app in the repo gets state m
 
 ## Upgrading
 
+From 2.8.1: sequence stories use a bold capital-letter heading per phase and a plain numbered list whose numbers are the arrow numbers; the next `/app-docs:generate` rewrites them into this format.
+
 From 2.8.0: Dev Guide stories carry their code references inline in each arrow line; the next `/app-docs:generate` rewrites the stories once more.
 
 From 2.7.1: the next `/app-docs:generate` re-reads the code and rewrites every sequence story in detail: a line per arrow, with inline file and line references in the Dev Guide, and log messages, tables and timeouts in the User Guide. Diagrams and the rest of the text are untouched. The plugin's examples no longer contain real product or company names.

@@ -1,6 +1,6 @@
 {
   "name": "app-docs",
-  "version": "2.8.1",
+  "version": "2.8.2",
   "description": "Generate, update and sync developer docs (English) and operator guides (Bahasa Indonesia) for every app in a repo, reviewed by fresh-context goldfish agents and synced to Docmost.",
   "author": { "name": "pentaly7" }
 }

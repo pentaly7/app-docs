@@ -82,12 +82,14 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 **Sequence**
 <sequence diagram>
 
-<Cerita detail (diagrams.md §5): judul berhuruf per fase, satu baris per panah (① ②…), tanpa referensi kode. Tiap baris menyebut log yang muncul, tabel atau file yang diperiksa, batas waktu, dan apa yang diterima caller:>
-**a. Terima dan validasi**
-① Client mengirim `POST /v1/payments` berisi `{order_id, amount}`.
-② Data diperiksa. Jika `order_id` kosong, client menerima `400` dan log berisi `invalid request` (level WARN). Tidak ada row baru di tabel `payments`.
+<Cerita detail (diagrams.md §5): judul tebal berhuruf kapital per fase, lalu daftar bernomor dengan nomor item sama dengan nomor panah, tanpa referensi kode. Tiap item menyebut log yang muncul, tabel atau file yang diperiksa, batas waktu, dan apa yang diterima caller:>
+**A. Terima dan validasi**
 
-**b. …**
+1. Client mengirim `POST /v1/payments` berisi `{order_id, amount}`.
+
+2. Data diperiksa. Jika `order_id` kosong, client menerima `400` dan log berisi `invalid request` (level WARN). Tidak ada row baru di tabel `payments`.
+
+**B. …**
 
 **Tanda berhasil:** <row baru di tabel `payments` status `PENDING`, log `payment created`>
 **Jika gagal:** <gejala, penyebab yang paling mungkin, lalu apa yang diperiksa, untuk setiap cabang error di flowchart>
