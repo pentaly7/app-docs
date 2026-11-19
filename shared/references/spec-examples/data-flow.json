@@ -8,7 +8,7 @@
   },
   {
    "id": "app",
-   "label": "myim3-http-gateway"
+   "label": "billing-gateway"
   },
   {
    "id": "outside",
@@ -16,7 +16,7 @@
   },
   {
    "id": "database",
-   "label": "Database (Oracle)"
+   "label": "Database (SQL)"
   },
   {
    "id": "files",
@@ -40,7 +40,7 @@
    "id": "svc",
    "kind": "step",
    "zone": "app",
-   "label": "Inquiry / Payment\n(postpaid.Service)"
+   "label": "Inquiry / Payment\n(billing.Service)"
   },
   {
    "id": "reload",
@@ -52,13 +52,13 @@
    "id": "cfg",
    "kind": "step",
    "zone": "app",
-   "label": "configstore.Store\nRC map in memory"
+   "label": "rcstore.Store\nRC map in memory"
   },
   {
    "id": "repo",
    "kind": "step",
    "zone": "app",
-   "label": "oracle.Repository\nqueries \u00b7 inserts \u00b7 SAF queue"
+   "label": "db.Repository\nqueries \u00b7 inserts \u00b7 SAF queue"
   },
   {
    "id": "saf",
@@ -73,34 +73,34 @@
    "label": "logfile (slog)"
   },
   {
-   "id": "tibco",
+   "id": "partner",
    "kind": "external",
    "zone": "outside",
-   "label": "Tibco postpaid API"
+   "label": "Partner billing API"
   },
   {
    "id": "rc",
    "kind": "db",
    "zone": "database",
-   "label": "POSTPAID_TIBCO_MAPPING_RC\n(table)"
+   "label": "PARTNER_RC_MAP\n(table)"
   },
   {
-   "id": "geneva",
+   "id": "ledger",
    "kind": "db",
    "zone": "database",
-   "label": "GENEVA_CUST_TRANS\n(table)"
+   "label": "LEDGER_TRANS\n(table)"
   },
   {
    "id": "iso",
    "kind": "db",
    "zone": "database",
-   "label": "ISO_LOG\n(table)"
+   "label": "TXN_LOG\n(table)"
   },
   {
    "id": "saffile",
    "kind": "file",
    "zone": "files",
-   "label": "SAF queue file\nlogs/myim3-http-gateway/SAF/SAF"
+   "label": "SAF queue file\nlogs/billing-gateway/SAF/SAF"
   },
   {
    "id": "logs",
@@ -115,7 +115,7 @@
    "to": "svc",
    "kind": "success",
    "both": true,
-   "label": "IsoRequest / reply"
+   "label": "InquiryRequest / reply"
   },
   {
    "from": "op",
@@ -124,7 +124,7 @@
   },
   {
    "from": "svc",
-   "to": "tibco",
+   "to": "partner",
    "kind": "success",
    "both": true,
    "label": "inquiry / reply"
@@ -148,7 +148,7 @@
   {
    "from": "reload",
    "to": "rc",
-   "label": "GetMapRc"
+   "label": "LoadRcMap"
   },
   {
    "from": "reload",
@@ -157,7 +157,7 @@
   },
   {
    "from": "repo",
-   "to": "geneva",
+   "to": "ledger",
    "kind": "success",
    "label": "INSERT row"
   },

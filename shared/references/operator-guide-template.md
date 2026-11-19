@@ -30,7 +30,7 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 
 <!-- docgen:section id="setup" -->
 ## 1. Setup
-> `a1b2c3d` · `main` · 2026-11-16 · verified by Rizki Tegar
+> `a1b2c3d` · `main` · 2026-11-16 · verified by Jane Doe
 
 <1 sampai 2 kalimat: fungsi aplikasi dan penggunanya.>
 
@@ -82,9 +82,12 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 **Sequence**
 <sequence diagram>
 
-<Cerita sequence dalam paragraf berhuruf, satu per fase atau keputusan, masing-masing diakhiri panah yang dicakup:>
-**a. Terima dan validasi.** Client mengirim request pembayaran. Jika `order_id` kosong, aplikasi langsung menjawab `400` dan proses berhenti. *(panah 1–3)*
-**b. …** *(panah 4–7)*
+<Cerita detail (diagrams.md §5): judul berhuruf per fase, satu baris per panah (① ②…), tanpa referensi kode. Tiap baris menyebut log yang muncul, tabel atau file yang diperiksa, batas waktu, dan apa yang diterima caller:>
+**a. Terima dan validasi**
+① Client mengirim `POST /v1/payments` berisi `{order_id, amount}`.
+② Data diperiksa. Jika `order_id` kosong, client menerima `400` dan log berisi `invalid request` (level WARN). Tidak ada row baru di tabel `payments`.
+
+**b. …**
 
 **Tanda berhasil:** <row baru di tabel `payments` status `PENDING`, log `payment created`>
 **Jika gagal:** <gejala, penyebab yang paling mungkin, lalu apa yang diperiksa, untuk setiap cabang error di flowchart>

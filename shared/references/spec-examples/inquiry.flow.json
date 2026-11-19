@@ -6,7 +6,7 @@
    "id": "s",
    "kind": "start",
    "spine": true,
-   "label": "POST /inquiry\nIsoRequest JSON · header api_key"
+   "label": "POST /inquiry\nInquiryRequest JSON · header api_key"
   },
   {
    "id": "n1",
@@ -35,7 +35,7 @@
   {
    "id": "e401",
    "kind": "err",
-   "label": "401 {message: invalid api key}\nno ISO / Geneva row written"
+   "label": "401 {message: invalid api key}\nno transaction-log / ledger row written"
   },
   {
    "id": "d3",
@@ -75,30 +75,30 @@
    "id": "n4",
    "kind": "step",
    "spine": true,
-   "label": "Service.Inquiry\ntransid = TRANS_ID_PREFIX + rrn"
+   "label": "Service.Inquiry\ntransid = TXN_ID_PREFIX + rrn"
   },
   {
    "id": "n4-note",
    "kind": "note",
    "note_for": "n4",
-   "label": "msisdn = normalised billData.customerId (62...). A deferred call runs the ISO + Geneva writers on every return."
+   "label": "customerId = normalised billData.customerId. A deferred call runs the transaction-log + ledger writers on every return."
   },
   {
    "id": "n6",
    "kind": "step",
    "spine": true,
-   "label": "tibco.Client.Inquiry\nPOST INQUIRY_URL"
+   "label": "partner.Client.Inquiry\nPOST PARTNER_INQUIRY_URL"
   },
   {
    "id": "n6-note",
    "kind": "note",
    "note_for": "n6",
-   "label": "Body {transid, msisdn, channel}, header api_key, timeout CLIENT.TIBCO.TIMEOUT."
+   "label": "Body {transid, customerId, channel}, header api_key, timeout CLIENT.PARTNER.TIMEOUT."
   },
   {
    "id": "tx",
    "kind": "external",
-   "label": "Tibco postpaid API"
+   "label": "Partner billing API"
   },
   {
    "id": "d6a",
@@ -110,7 +110,7 @@
    "id": "k6a",
    "kind": "note",
    "note_for": "d6a",
-   "label": "ErrUnreachable: the request never reached Tibco (net.OpError op=dial or net.DNSError)."
+   "label": "ErrUnreachable: the request never reached Partner API (net.OpError op=dial or net.DNSError)."
   },
   {
    "id": "x89",
@@ -161,12 +161,12 @@
    "id": "k7",
    "kind": "note",
    "note_for": "d7",
-   "label": "configStore.Artajasa(status): in-memory map loaded from POSTPAID_TIBCO_MAPPING_RC."
+   "label": "rcStore.Lookup(status): in-memory map loaded from PARTNER_RC_MAP."
   },
   {
    "id": "x68b",
    "kind": "step",
-   "label": "slog \"failed to get rc artajasa\"\nrespCode = 68"
+   "label": "slog \"failed to look up rc\"\nrespCode = 68"
   },
   {
    "id": "d8",
@@ -195,19 +195,19 @@
    "id": "n8-note",
    "kind": "note",
    "note_for": "n8",
-   "label": "additionalData = baNumber, billDay, statusDirectDebit, samuNumber."
+   "label": "additionalData = accountNo, dueDay, autoDebitStatus, refNo."
   },
   {
    "id": "sub",
    "kind": "subflow",
    "spine": true,
-   "label": "▶ Write ISO log + Geneva log"
+   "label": "▶ Write transaction log + ledger"
   },
   {
    "id": "ok",
    "kind": "ok",
    "spine": true,
-   "label": "HTTP 200 {mti_res 0210, respCode, billData}"
+   "label": "HTTP 200 {respCode, billData}"
   },
   {
    "id": "ok-note",

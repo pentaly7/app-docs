@@ -66,11 +66,12 @@ Each app moves through stages, recorded in `state.json → apps.<id>.stage`. **W
 | `fixed` | operator-humanizer on the operator guide; then svg-theme, validate | `done` |
 | `done` + drift found, or FSM newly enabled | app-documenter `update` → goldfish-reviewer (changed sections only) → app-documenter `fix` → operator-humanizer (changed operator sections only) → svg-theme → validate | `done` |
 | `redraw` (set when only `diagram_changed`) | app-documenter `redraw` → operator-humanizer (the User Guide sections it rewrote) → svg-theme → validate | `done` |
+| `restory` (set when `story_changed`) | app-documenter `story` → operator-humanizer (the story sections) → validate | `done` |
 | `done` + humanizer version changed, code unchanged | operator-humanizer on the whole operator guide → validate | `done` |
 
 A `redraw` needs the same diagram mode the diagrams were made in. If the app's sections record `diagram: drawio` but this run is in Mermaid mode, skip the redraw for that app, keep `diagram_version` unchanged, and tell the user to rerun with `drawio`, instead of turning draw.io diagrams into Mermaid or marking them all outdated.
 
-`diagram_changed` and `humanizer_changed` can both be true: run `redraw` first, then the humanizer step. After every app finishes, set `diagram_version` / `humanizer_version` in `state.json` to the current values from `TOOL meta`.
+Several of `diagram_changed`, `story_changed` and `humanizer_changed` can be true at once. Run `redraw` first, then `restory`, then the humanizer step. After every app finishes, set `diagram_version` / `story_version` / `humanizer_version` in `state.json` to the current values from `TOOL meta`.
 
 Waiting: an agent that takes a long time is normal, because tracing every branch and drawing diagrams is slow. **Wait for every agent to finish.** Never stop or cancel one, and never start a second agent for an app whose agent is still running, since both would write the same files. If you run any shell command yourself, use `command <tool> … < /dev/null` with explicit paths, so the user's shell aliases can't make it hang.
 
@@ -105,6 +106,13 @@ Mode: update
 Drift for this app: <JSON from TOOL drift for this app: stale sections + changed/renamed/deleted files>
 Template changed: <yes|no>   (yes → redo every section as in fresh mode, keep flow IDs)
 FSM newly enabled: <yes|no>   (yes → detect state machines and add their sections, state-machines.md)
+```
+
+**app-documenter, mode story**
+```
+Mode: story
+(same header as fresh)
+Rewrite every sequence story of this app under the current diagrams.md §5, re-reading the code.
 ```
 
 **app-documenter, mode redraw**

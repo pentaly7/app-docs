@@ -107,32 +107,53 @@ Every path ends at a **success terminal** or an **error terminal**, or visibly r
 **Keep it readable:**
 - **Down, and right for branches that go on.** A branch ending in a success/error end goes to the row below. A branch that continues with more steps (another decision, a fallback) goes right on the same row and runs down as its own column. The script works this out from the edges. Nothing goes up, except `rejoin` lines, which run down the shared channel and enter their target from above.
 - **At most 3 lines of text per shape.** Keep the short part in the shape (`2. INSERT row`, with a timeout key or function name if it matters) and move the rest into a note. The script lists shapes over the limit in `long_labels`. Fix those and run it again.
-- **Identical logic drawn twice is drawn once.** When parallel or repeated branches run the same steps (writing two log tables, with the same validation and fallback), draw the shared steps **once** as a `shared.<sub-id>` sub-flow. Point each branch at it with a sub-flow node that says which instance it is (`▶ Write row with SAF fallback: ISO_LOG via InsertSingleLogIso`).
+- **Identical logic drawn twice is drawn once.** When parallel or repeated branches run the same steps (writing two log tables, with the same validation and fallback), draw the shared steps **once** as a `shared.<sub-id>` sub-flow. Point each branch at it with a sub-flow node that says which instance it is (`▶ Write row with SAF fallback: TXN_LOG via InsertTxnLog`).
 
 ## 5. Sequence diagrams
 
 A sequence diagram shows **who calls whom, in order**, for the same flow. One per important flow. It should read like a story in pictures, so the script makes it rich. You decide what's in it:
 
 - **Participants** left to right in call order: caller, this app (split into its main layers when it helps: handler, service, repository), other internal apps, datastores, queues, external systems. Give each its real `kind`: the header is drawn as a person (`client`), a cylinder (`db`), a folder (`file`), a bucket (`object`), a hexagon (`cache`), a cloud (`external`), or a box (`step`, `internal`).
-- **Phases:** group the messages into 3–6 phases that name what is happening (`Receive & validate`, `Call Tibco`, `Map response`, `Write logs`, `Respond`). Each phase is a colored band with its name on the left.
-- **Early exits are `break`, never nested `alt`.** "If the api_key is wrong, reply 401 and stop" is one small `break` box at that spot, and the happy path continues below it, unnested. Use `alt` only for two outcomes that both continue (Tibco error vs. 2xx reply), and give each block a `tone` (`ok` green, `error` red).
+- **Phases:** group the messages into 3–6 phases that name what is happening (`Receive & validate`, `Call partner`, `Map response`, `Write logs`, `Respond`). Each phase is a colored band with its name on the left.
+- **Early exits are `break`, never nested `alt`.** "If the api_key is wrong, reply 401 and stop" is one small `break` box at that spot, and the happy path continues below it, unnested. Use `alt` only for two outcomes that both continue (Partner API error vs. 2xx reply), and give each block a `tone` (`ok` green, `error` red).
 - **Message kinds:** `sync` (call), `async` (publish, enqueue), `reply`, `error`. Colors follow automatically: green for the happy path, red for errors, storage colors for storage access, grey for external systems.
-- **Short arrow labels**, with the key detail in a **note** beside the lifeline: `{"note": "timeout CLIENT.TIBCO.TIMEOUT", "over": "svc"}`.
+- **Short arrow labels**, with the key detail in a **note** beside the lifeline: `{"note": "timeout CLIENT.PARTNER.TIMEOUT", "over": "svc"}`.
 - Activation bars and arrow numbers are automatic.
 
-**The story under the diagram.** The arrow numbers belong to the diagram. The text tells the story in **lettered** paragraphs, so the two numbering systems never mix. Each paragraph covers one phase or one decision, in plain sentences, and ends with the arrows it covers:
+**The story under the diagram.** The arrow numbers belong to the diagram, and the text walks through them in detail. The story has one **lettered phase heading** per phase band (`a.`, `b.`, …), then **one line per arrow**, starting with the arrow's number as a circled digit (`①`–`⑳`; from 21 on, `(21)`, `(22)`…). Every arrow in the diagram gets its line, in order.
 
-> **a. Receive and validate.** The caller sends the inquiry with its api_key. The handler starts a transaction log, then checks the key, the content type and the required fields. Any failure answers right away (401, 422/400 or 500) and nothing else happens. *(arrows 1–5)*
->
-> **b. Call Tibco.** …  *(arrows 6–9)*
+Each arrow line says, where it applies:
+- **what moves:** the call or message and the data passed (fields, headers, body shape)
+- **what decides:** the condition that picks this branch, and what happens on the other branch
+- **what is written or logged:** the table and columns, file and path, log message text and level
+- **limits:** timeouts and retries, with their values and config keys
+- **the result:** response code and body
+- **errors:** what the caller gets on each error path, and whether anything else still happens (rows still written, nothing written)
+- **what outlives the request:** queued for replay, picked up by a cron job, an event others consume
 
-User Guide: the same, in Bahasa Indonesia, ending with *(panah 1–5)*.
+Errors (`break`, `alt`) are described **inside** their phase, on the line of the arrow that carries them.
+
+**Dev guide:** each arrow line carries its code reference **inline**, right after the part of the sentence it backs up: the repo-relative file and lines (`path:line` or `path:start-end`), validated like every code reference. A line that names two places in the code gets two references:
+
+> **a. Receive and validate**
+> ① The caller sends `POST /inquiry` with an `InquiryRequest` JSON body and the `api_key` header, routed in `internal/server/router.go:41`.
+> ② The logger middleware starts a transaction (`StartTransaction(rrn, "inquiry")`, `internal/server/middleware/logger.go:18-37`) and logs the request as step 1 `IN` at INFO, before any check runs.
+> ③ If `api_key` doesn't equal `SERVER.API_KEY` (`internal/server/auth.go:22-35`), the handler answers `401 {message: "invalid api key"}`. No transaction-log or ledger row is written, and the flow stops here.
+
+**User Guide:** the same headings and arrow lines in Bahasa Indonesia, with no code references. Instead, each line adds what an operator sees and checks: the **log message** at that point (text and level), the **table or file** to look in, **how long** the step may take (timeout and its key), and **what the caller sees**:
+
+> **a. Terima dan validasi**
+> ① Caller mengirim `POST /inquiry` berisi `InquiryRequest` dengan header `api_key`.
+> ② Request dicatat di log sebagai step 1 `IN` (level INFO) sebelum pemeriksaan apa pun.
+> ③ Jika `api_key` tidak sama dengan `SERVER.API_KEY`, caller menerima `401 {message: "invalid api key"}`. Tidak ada row di `TXN_LOG` maupun `LEDGER_TRANS`, dan proses berhenti di sini.
+
+The story can be long. Detail is the point here. The steps under the flowchart stay detailed too: they explain the **logic** (each decision and rule) top to bottom, and the story explains the **interaction** (who calls whom, with what, in what order).
 
 ## 6. Structure, startup, data-flow
 
 - **Structure**: the app's components (handlers, services, workers, schedulers, repositories, caches, clients) and how they connect, plus everything outside the app it talks to. Group the app's components inside one container labelled with the app name. Arrows labelled with protocol and purpose (`HTTP JSON`, `gRPC`, `SQL`, `publishes order.created`).
 - **Startup**: flowchart from process start to "ready", in code order: config load and validation, logger, DI/wiring, connections (with retry/timeouts), migrations, workers/schedulers, server listen, readiness. Every fail-fast condition is an error terminal (`missing DB_DSN → exit 1`).
-- **Data-flow**: the app's components with the data on the arrows, grouped into zones: `Callers` (first), the app, `External systems`, then **one zone per storage type** so the reader sees where data lands: `Database (<engine>)`, `File storage (<where>)`, `Object storage (<provider>)`, `Cache (<engine>)`, `Other storage`. Only zones that have something in them. Each storage node uses its storage kind (section 8) and its label names the actual thing: the table (`ISO_LOG (table)`), the path (`logs/app.YYYY-MM-DD.log`), the bucket and prefix (`s3://docs/uploads/`), the key pattern (`session:{id}`). The same storage zones are used in the structure diagram. Keep arrow labels **short** (a few words: `INSERT ISO_LOG row`, `POST inquiry / reply`) and give the full field lists in the table under the diagram. Long labels on arrows collide with each other. A two-way exchange is one edge with `"both": true`. Include retention/cleanup jobs if they exist.
+- **Data-flow**: the app's components with the data on the arrows, grouped into zones: `Callers` (first), the app, `External systems`, then **one zone per storage type** so the reader sees where data lands: `Database (<engine>)`, `File storage (<where>)`, `Object storage (<provider>)`, `Cache (<engine>)`, `Other storage`. Only zones that have something in them. Each storage node uses its storage kind (section 8) and its label names the actual thing: the table (`TXN_LOG (table)`), the path (`logs/app.YYYY-MM-DD.log`), the bucket and prefix (`s3://docs/uploads/`), the key pattern (`session:{id}`). The same storage zones are used in the structure diagram. Keep arrow labels **short** (a few words: `INSERT TXN_LOG row`, `POST inquiry / reply`) and give the full field lists in the table under the diagram. Long labels on arrows collide with each other. A two-way exchange is one edge with `"both": true`. Include retention/cleanup jobs if they exist.
 
 ## 7. Detail inside the diagram
 
@@ -145,7 +166,7 @@ Put the facts a reader would otherwise have to dig out of code **in the diagram*
 | Decision | the actual condition (`amount <= 0?`, `status == PAID?`) |
 | Datastore | table and the operation with columns (`payments: INSERT id, order_id, amount, status=PENDING`) |
 | Queue/topic | name and payload fields (`order.created {order_id, total, items[]}`) |
-| External call | system, endpoint, timeout and its config key (`Midtrans POST /v2/charge · timeout 5s (PAYMENT_TIMEOUT_MS)`) |
+| External call | system, endpoint, timeout and its config key (`PayGate POST /v2/charge · timeout 5s (PAYMENT_TIMEOUT_MS)`) |
 | Retry | count, backoff, config key (`retry ×3, backoff 2s (CHARGE_RETRY)`) |
 | Error terminal | status code / outcome and message (`502 gateway_timeout`, `payment stays PENDING`) |
 | Success terminal | response code and body summary (`201 {payment_id, status}`) |
@@ -283,12 +304,12 @@ One JSON file per diagram. Full worked examples (a real flowchart with notes and
   "type": "flowchart",
   "title": "Inquiry: flowchart",
   "nodes": [
-    {"id": "start", "kind": "start", "spine": true, "label": "POST /inquiry\nIsoRequest JSON"},
+    {"id": "start", "kind": "start", "spine": true, "label": "POST /inquiry\nInquiryRequest JSON"},
     {"id": "auth", "kind": "decision", "spine": true, "label": "2. api_key valid?"},
     {"id": "auth-note", "kind": "note", "note_for": "auth", "label": "header api_key must equal SERVER.API_KEY ..."},
     {"id": "e401", "kind": "err", "label": "401 invalid api key"},
     {"id": "rc89", "kind": "step", "label": "respCode = 89 (link down)"},
-    {"id": "log", "kind": "subflow", "spine": true, "label": "13. ▶ Write ISO + Geneva log"}
+    {"id": "log", "kind": "subflow", "spine": true, "label": "13. ▶ Write transaction log + ledger"}
   ],
   "edges": [
     {"from": "start", "to": "auth", "kind": "success"},
@@ -303,7 +324,7 @@ One JSON file per diagram. Full worked examples (a real flowchart with notes and
 - `"spine": true` on every node of the happy path, in order. Exactly one straight column.
 - `"note_for": "<id>"` on notes. The script draws the dashed connector itself.
 - Edge `kind`: `success` (happy path) · `normal` · `error` (ends at an error end point) · `rejoin` (an error path that continues to a later spine step, sharing the right-hand channel) · `async` · `external` (state diagrams: cron, other app, manual). `"both": true` draws arrows on both ends.
-- Data-flow / structure: add `"zones": [{"id": "callers", "label": "Callers"}, {"id": "app", "label": "<app name>"}, {"id": "external", "label": "External systems"}, {"id": "db", "label": "Database (Oracle)"}, {"id": "files", "label": "File storage (local disk)"}]` (one zone per storage type that exists) and a `"zone"` on every node. The first zone is the top row.
+- Data-flow / structure: add `"zones": [{"id": "callers", "label": "Callers"}, {"id": "app", "label": "<app name>"}, {"id": "external", "label": "External systems"}, {"id": "db", "label": "Database (SQL)"}, {"id": "files", "label": "File storage (local disk)"}]` (one zone per storage type that exists) and a `"zone"` on every node. The first zone is the top row.
 - `"direction"` overrides the default (`TB` or `LR`), rarely needed.
 
 **Sequence**
@@ -314,14 +335,14 @@ One JSON file per diagram. Full worked examples (a real flowchart with notes and
   "title": "Inquiry: sequence",
   "participants": [
     {"id": "caller", "kind": "client", "label": "Upstream caller"},
-    {"id": "svc", "kind": "step", "label": "postpaid.Service"},
-    {"id": "tibco", "kind": "external", "label": "Tibco postpaid API"}
+    {"id": "svc", "kind": "step", "label": "billing.Service"},
+    {"id": "partner", "kind": "external", "label": "Partner billing API"}
   ],
   "steps": [
     {"from": "caller", "to": "svc", "label": "POST /inquiry {rrn, billData}"},
-    {"frame": "alt", "label": "[Tibco unreachable]",
-     "steps": [{"from": "tibco", "to": "svc", "kind": "error", "label": "dial error → respCode 89"}],
-     "else": [{"label": "[reply ok]", "steps": [{"from": "tibco", "to": "svc", "kind": "reply", "label": "200 {status}"}]}]},
+    {"frame": "alt", "label": "[Partner API unreachable]",
+     "steps": [{"from": "partner", "to": "svc", "kind": "error", "label": "dial error → respCode 89"}],
+     "else": [{"label": "[reply ok]", "steps": [{"from": "partner", "to": "svc", "kind": "reply", "label": "200 {status}"}]}]},
     {"from": "svc", "to": "caller", "kind": "reply", "label": "200 {respCode, billData}"}
   ]
 }
@@ -329,8 +350,8 @@ One JSON file per diagram. Full worked examples (a real flowchart with notes and
 
 - Participant `kind`: `client` `step` `internal` `external` `db` `file` `object` `cache` `store` `queue`.
 - Message `kind`: `sync` (default) · `async` · `reply` · `error`. A message to the same participant draws a self-loop.
-- Phases: `{"phase": "Call Tibco", "steps": [...]}` at the top level, wrapping the steps of that phase.
+- Phases: `{"phase": "Call partner", "steps": [...]}` at the top level, wrapping the steps of that phase.
 - Frames: `"frame": "break" | "alt" | "opt" | "loop"` with a condition `label`, nested `steps`, and for `alt` any `else` blocks. Optional `"tone": "ok" | "error" | "neutral"` on a frame or an `else` block (`break` is red by default).
-- Notes: `{"note": "timeout CLIENT.TIBCO.TIMEOUT", "over": "<participant id>"}`, drawn beside that lifeline at that point.
-- Arrows are numbered automatically in order. The story under the diagram refers to them by number, with lettered paragraphs (section 5).
+- Notes: `{"note": "timeout CLIENT.PARTNER.TIMEOUT", "over": "<participant id>"}`, drawn beside that lifeline at that point.
+- Arrows are numbered automatically in order. The story under the diagram has one line per arrow, under lettered phase headings (section 5).
 

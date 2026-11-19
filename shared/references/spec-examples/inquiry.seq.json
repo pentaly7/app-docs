@@ -1,35 +1,35 @@
 {"type":"sequence","title":"Inquiry: sequence","participants":[
  {"id":"caller","kind":"client","label":"Caller"},{"id":"http","kind":"step","label":"HTTP handler"},
- {"id":"svc","kind":"step","label":"postpaid.Service"},{"id":"tibco","kind":"external","label":"Tibco API"},
- {"id":"repo","kind":"step","label":"oracle.Repository"},{"id":"db","kind":"db","label":"Oracle DB"}],
+ {"id":"svc","kind":"step","label":"billing.Service"},{"id":"partner","kind":"external","label":"Partner API"},
+ {"id":"repo","kind":"step","label":"db.Repository"},{"id":"db","kind":"db","label":"SQL database"}],
  "steps":[
  {"phase":"Receive & validate","steps":[
-   {"from":"caller","to":"http","label":"POST /inquiry {IsoRequest}, header api_key"},
+   {"from":"caller","to":"http","label":"POST /inquiry {InquiryRequest}, header api_key"},
    {"from":"http","to":"http","label":"Logger: StartTransaction(rrn, \"inquiry\"), log step 1 IN"},
    {"frame":"break","label":"[api_key != SERVER.API_KEY]","steps":[{"from":"http","to":"caller","kind":"error","label":"401 {message: invalid api key}"}]},
    {"frame":"break","label":"[Content-Type missing, or body does not parse]","steps":[{"from":"http","to":"caller","kind":"error","label":"422 or 400 (text/plain)"}]},
    {"frame":"break","label":"[required field missing]","steps":[{"from":"http","to":"caller","kind":"error","label":"500 text/plain (validation error)"}]}]},
- {"phase":"Call Tibco","steps":[
+ {"phase":"Call partner","steps":[
    {"from":"http","to":"svc","label":"Inquiry(ctx, req)"},
-   {"from":"svc","to":"tibco","label":"POST INQUIRY_URL {transid, msisdn, channel}"},
-   {"note":"timeout CLIENT.TIBCO.TIMEOUT","over":"svc"},
+   {"from":"svc","to":"partner","label":"POST PARTNER_INQUIRY_URL {transid, customerId, channel}"},
+   {"note":"timeout CLIENT.PARTNER.TIMEOUT","over":"svc"},
    {"frame":"alt","label":"[dial/DNS error, timeout, non-2xx, bad JSON]","tone":"error","steps":[
-      {"from":"tibco","to":"svc","kind":"error","label":"respCode 89, 68 or 05"}],
-    "else":[{"label":"[2xx JSON reply]","tone":"ok","steps":[{"from":"tibco","to":"svc","kind":"reply","label":"200 {status, servicedata}"}]}]}]},
+      {"from":"partner","to":"svc","kind":"error","label":"respCode 89, 68 or 05"}],
+    "else":[{"label":"[2xx JSON reply]","tone":"ok","steps":[{"from":"partner","to":"svc","kind":"reply","label":"200 {status, servicedata}"}]}]}]},
  {"phase":"Map response","steps":[
-   {"from":"svc","to":"svc","label":"configStore.Artajasa(status)"},
-   {"frame":"alt","label":"[status not in RC map]","tone":"error","steps":[{"from":"svc","to":"svc","kind":"error","label":"respCode 68, log \"failed to get rc artajasa\""}],
+   {"from":"svc","to":"svc","label":"rcStore.Lookup(status)"},
+   {"frame":"alt","label":"[status not in RC map]","tone":"error","steps":[{"from":"svc","to":"svc","kind":"error","label":"respCode 68, log \"failed to look up rc\""}],
     "else":[{"label":"[status mapped]","tone":"ok","steps":[{"from":"svc","to":"svc","label":"respCode = mapped RC, NewBillData(...)"}]}]},
    {"frame":"break","label":"[name or ref too long]","steps":[{"from":"svc","to":"svc","kind":"error","label":"strings.Repeat panics, recover gives HTTP 500"}]}]},
  {"phase":"Write logs (deferred, both in parallel)","steps":[
-   {"from":"svc","to":"repo","label":"InsertSingleLogIso"},
-   {"from":"repo","to":"db","label":"INSERT ISO_LOG"},
+   {"from":"svc","to":"repo","label":"InsertTxnLog"},
+   {"from":"repo","to":"db","label":"INSERT TXN_LOG"},
    {"from":"db","to":"repo","kind":"reply","label":"ok or error"},
-   {"from":"svc","to":"repo","label":"InsertGenevaCustTrans (TRANS_FLAG 1, TRANS_AMOUNT 0)"},
-   {"from":"repo","to":"db","label":"INSERT GENEVA_CUST_TRANS"},
+   {"from":"svc","to":"repo","label":"InsertLedgerTrans (TRANS_FLAG 1, TRANS_AMOUNT 0)"},
+   {"from":"repo","to":"db","label":"INSERT LEDGER_TRANS"},
    {"from":"db","to":"repo","kind":"reply","label":"ok or error"},
    {"frame":"opt","label":"[connection-type error]","tone":"error","steps":[{"from":"repo","to":"repo","label":"append \"op|json\" to the SAF file"}]},
    {"note":"row kept in SAF, replayed later","over":"repo"}]},
  {"phase":"Respond","steps":[
-   {"from":"svc","to":"http","kind":"reply","label":"Response {mti_res, respCode, billData, additionalData}"},
+   {"from":"svc","to":"http","kind":"reply","label":"Response {respCode, billData, additionalData}"},
    {"from":"http","to":"caller","kind":"reply","label":"200 JSON (log response, step 1 OUT)"}]}]}

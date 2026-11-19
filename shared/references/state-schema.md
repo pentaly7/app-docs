@@ -14,6 +14,7 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
   "template_version": 2,
   "humanizer_version": 2,
   "diagram_version": 8,
+  "story_version": 3,
   "split_all": false,
   "apps": {
     "payment-api": {
@@ -45,6 +46,7 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 - `kind`: `backend` | `frontend` | `worker` | `cli` | `library`.
 - `stage` (per-app pipeline, used for resume): `pending` → `drafted` → `reviewed` → `fixed` → `done`. Also `failed`, with a `stage_error` string.
 - `diagram_version`: the diagram rules the diagrams were last drawn with. When it differs from the plugin's, the next run redraws the diagrams only (text untouched).
+- `story_version`: the sequence-story rules the stories were last written with. When it differs from the plugin's, the next run re-reads the code and rewrites only the stories.
 - `apps.<id>.fsm`: state machine detection is on for this app. Set by running with `fsm`, kept for every later run.
 - `docmost.diagram_theme`: `adaptive` (light and dark palette, default) or `light` (always light), decided by the first sync's calibration.
 - `humanizer_version`: the humanizer rules the operator guides were last polished with. When it differs from the plugin's, the next run re-humanizes only.
@@ -84,7 +86,7 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
       "dirty": false,
       "branch": "main",
       "date": "2026-11-15",
-      "verified_by": "Rizki Tegar",
+      "verified_by": "Jane Doe",
       "files": [
         "services/payment-api/internal/handler/payment.go",
         "services/payment-api/internal/service/payment.go"

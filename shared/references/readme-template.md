@@ -6,7 +6,7 @@ A README is the front door: someone lands on the repo or app folder in GitLab an
 
 - **Source: the Dev Guide only.** Don't read application code. If the Dev Guide doesn't say it, the README doesn't either. The orchestrator has already confirmed with the user that the Dev Guide is recent enough.
 - **English**, the same style as the Dev Guide: concise, one fact per sentence, no filler, no marketing.
-- **No `path:line` references and no Unverified/Contradiction/Security marks.** A README is a summary, and the Dev Guide link covers detail. Short code names (`postpaid.Service`) are fine.
+- **No `path:line` references and no Unverified/Contradiction/Security marks.** A README is a summary, and the Dev Guide link covers detail. Short code names (`billing.Service`) are fine.
 - **Secrets:** keys and placeholders only, exactly as in the Dev Guide's configuration table.
 - **Diagrams:** embed the structure diagram (`structure_diagram` from the plan, a relative path). In Mermaid mode, copy the Dev Guide's structure Mermaid block.
 - **Links are relative** to the README's own folder, from the plan (`dev_guide`, `user_guide`, `structure_diagram`). Docmost only when `docmost_url` is set. Leave it out otherwise, without a placeholder.
@@ -24,7 +24,7 @@ A README is the front door: someone lands on the repo or app folder in GitLab an
 |---|---|
 | Language & framework | Go 1.22, Gin |
 | Runs as | HTTP API on port 8080 |
-| Talks to | Oracle (ISO_LOG, GENEVA_CUST_TRANS), Tibco postpaid API |
+| Talks to | SQL database (TXN_LOG, LEDGER_TRANS), Partner billing API |
 
 ## Quick start
 <from Dev Guide §3: requirements in one line, then the exact commands>

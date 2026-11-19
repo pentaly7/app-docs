@@ -19,6 +19,7 @@ This is the main command. It works out what each app needs, so running it again 
 | App `done`, but its code changed since its sections' commits | Update the stale sections |
 | New app found in the repo | Fresh docs for it |
 | `diagram_changed` only | Redraw every app's diagrams (stage `redraw`), text untouched |
+| `story_changed` | Re-read the code and rewrite every sequence story (stage `restory`), nothing else |
 | `humanizer_changed` only | Re-humanize every operator guide (stage `fixed` → `done`), nothing else |
 | Everything up to date | Say so and stop |
 
@@ -34,13 +35,14 @@ This is the main command. It works out what each app needs, so running it again 
    - containers that hold no code of their own (a `package.json` with `workspaces` whose packages are listed separately, a Maven `<packaging>pom</packaging>` aggregator), and
    - tooling nested inside another app (for example a `package.json` that only runs linters inside a Go service).
 
-   Guess `kind` from the hints. Write `state.json` with `template_version`, `humanizer_version` and `diagram_version` from meta, `fsm` per app (true when the arguments contain `fsm`), `split_all` from detect, every app at `stage: "pending"`, and `docmost: {}`.
+   Guess `kind` from the hints. Write `state.json` with `template_version`, `humanizer_version`, `diagram_version` and `story_version` from meta, `fsm` per app (true when the arguments contain `fsm`), `split_all` from detect, every app at `stage: "pending"`, and `docmost: {}`.
 
    **State exists:** run `TOOL drift --repo REPO` and apply the table above:
    - `template_changed` → every app gets update mode with "Template changed: yes". Apps without an app-state file get fresh mode. Set `template_version` to current **after** all apps finish, so an interrupted regeneration resumes as a regeneration.
    - `new_app_candidates` → add them as `pending`, filtered as above. Recompute `split_all` (more than 10 apps → true). If it flips to true, every documented app needs regeneration in split mode, so treat them like a template change.
    - `missing_app_state` → reset to `pending`.
    - `diagram_changed` (and no template change) → set every `done` app to stage `redraw`. Set `diagram_version` to current after all apps finish.
+   - `story_changed` (and no template change) → set every `done` app to stage `restory` (after `redraw` if both). Set `story_version` to current after all apps finish.
    - `humanizer_changed` (and no template change) → set every `done` app to stage `fixed`, so only the humanizer step runs. Set `humanizer_version` to current after all apps finish. A template change already includes humanizing, so then just set both versions at the end.
 
 4. Show the plan in a few lines (each app with its action, the diagram mode, the humanizer used, whether the tree is dirty), then start. The user already asked for the run, so don't wait for approval.

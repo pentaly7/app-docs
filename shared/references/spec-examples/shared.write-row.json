@@ -6,7 +6,7 @@
    "id": "s",
    "kind": "start",
    "spine": true,
-   "label": "▶ Write row with SAF fallback\n(ISO_LOG or GENEVA_CUST_TRANS)"
+   "label": "▶ Write row with SAF fallback\n(TXN_LOG or LEDGER_TRANS)"
   },
   {
    "id": "d1",
@@ -18,7 +18,7 @@
    "id": "n1",
    "kind": "note",
    "note_for": "d1",
-   "label": "GetCurrentYearForBit7: at least 4 chars and the first 4 parse as MMDD. Otherwise the insert returns \"failed to get current year for bit7\"."
+   "label": "parseTxnDate: at least 4 chars and the first 4 parse as MMDD. Otherwise the insert returns \"failed to get current year for txnDate\"."
   },
   {
    "id": "e1",
@@ -29,12 +29,12 @@
    "id": "ins",
    "kind": "step",
    "spine": true,
-   "label": "INSERT row\ntimeout DATABASE.ORACLE.TIMEOUT"
+   "label": "INSERT row\ntimeout DATABASE.TIMEOUT"
   },
   {
    "id": "db",
    "kind": "db",
-   "label": "ISO_LOG or\nGENEVA_CUST_TRANS"
+   "label": "TXN_LOG or\nLEDGER_TRANS"
   },
   {
    "id": "d2",
@@ -57,7 +57,7 @@
    "id": "n3",
    "kind": "note",
    "note_for": "d3",
-   "label": "isConnErr: driver.ErrBadConn, context.DeadlineExceeded, or ORA-01017, 12170, 12514, 12541, 12560, 24418."
+   "label": "isConnErr: driver.ErrBadConn, context.DeadlineExceeded, or a driver error code for a refused, timed-out or unauthenticated connection."
   },
   {
    "id": "e3",
@@ -72,7 +72,7 @@
   {
    "id": "file",
    "kind": "file",
-   "label": "SAF file\nlogs/myim3-http-gateway/SAF/SAF"
+   "label": "SAF file\nlogs/billing-gateway/SAF/SAF"
   },
   {
    "id": "d4",

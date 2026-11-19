@@ -1,12 +1,12 @@
 {
  "type": "flowchart",
- "title": "Write ISO log + Geneva log",
+ "title": "Write transaction log + ledger",
  "nodes": [
   {
    "id": "s",
    "kind": "start",
    "spine": true,
-   "label": "▶ Write ISO log + Geneva log\n(deferred in Inquiry and Payment)"
+   "label": "▶ Write transaction log + ledger\n(deferred in Inquiry and Payment)"
   },
   {
    "id": "fork",
@@ -23,12 +23,12 @@
   {
    "id": "iso",
    "kind": "subflow",
-   "label": "▶ Write row with SAF fallback\nISO_LOG"
+   "label": "▶ Write row with SAF fallback\nTXN_LOG"
   },
   {
    "id": "gen",
    "kind": "subflow",
-   "label": "▶ Write row with SAF fallback\nGENEVA_CUST_TRANS"
+   "label": "▶ Write row with SAF fallback\nLEDGER_TRANS"
   },
   {
    "id": "join",

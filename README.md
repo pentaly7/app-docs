@@ -80,6 +80,10 @@ Add `fsm` once (`/app-docs:generate fsm`) and every app in the repo gets state m
 
 ## Upgrading
 
+From 2.8.0: Dev Guide stories carry their code references inline in each arrow line; the next `/app-docs:generate` rewrites the stories once more.
+
+From 2.7.1: the next `/app-docs:generate` re-reads the code and rewrites every sequence story in detail: a line per arrow, with inline file and line references in the Dev Guide, and log messages, tables and timeouts in the User Guide. Diagrams and the rest of the text are untouched. The plugin's examples no longer contain real product or company names.
+
 From 2.7.0: the next `/app-docs:generate drawio` redraws flowcharts without step numbers, with branches that continue in their own column to the right (text untouched).
 
 From 2.6.1: the next `/app-docs:generate drawio` redraws every diagram top-down, with richer sequence diagrams (phases, `break` boxes, colored arrows, activation bars, participant shapes, notes), and rewrites each sequence story as lettered paragraphs. The rest of the text is untouched.

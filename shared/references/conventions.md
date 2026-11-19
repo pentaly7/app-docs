@@ -89,13 +89,13 @@ Put an anchor comment on the line directly above every `##` and `###` heading th
 The line directly under every anchored heading **[checked]**:
 
 ```markdown
-> `a1b2c3d` · `main` · 2026-11-15 · verified by Rizki Tegar
+> `a1b2c3d` · `main` · 2026-11-15 · verified by Jane Doe
 ```
 
 - Short SHA (7 characters), branch, date (YYYY-MM-DD), `git config user.name` of whoever ran the plugin. All four values come from `docs_tool.py meta`.
 - Dirty working tree (`meta.dirty` true):
   ```markdown
-  > `a1b2c3d` + uncommitted changes · `feature/x` · 2026-11-15 · verified by Rizki Tegar
+  > `a1b2c3d` + uncommitted changes · `feature/x` · 2026-11-15 · verified by Jane Doe
   ```
 - Same format in the operator guide. It isn't a mark, it's provenance.
 - Only update the subtitle of a section you actually re-checked.

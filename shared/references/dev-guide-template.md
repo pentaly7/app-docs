@@ -11,7 +11,7 @@ Structure below. Keep the anchors and subtitles exactly as conventions §3–4 s
 
 <!-- docgen:section id="overview" -->
 ## 1. What is this app
-> `a1b2c3d` · `main` · 2026-11-15 · verified by Rizki Tegar
+> `a1b2c3d` · `main` · 2026-11-15 · verified by Jane Doe
 
 <2–4 sentences: what business problem it solves, who/what calls it, what it calls.>
 
@@ -20,7 +20,7 @@ Structure below. Keep the anchors and subtitles exactly as conventions §3–4 s
 | Type | backend API / frontend / worker / CLI / library |
 | Language & framework | Go 1.22, Gin |
 | Entry point | `cmd/server/main.go:14` |
-| Talks to | PostgreSQL `payments`, Kafka `order.created`, Midtrans API |
+| Talks to | PostgreSQL `payments`, Kafka `order.created`, PayGate API |
 | Called by | `checkout-web`, `order-service` |
 
 <!-- docgen:section id="structure" -->
@@ -90,9 +90,12 @@ Where config is loaded: `internal/config/config.go:20-61`.
 
 ![Create payment: sequence](diagrams/create-payment.seq.drawio.svg)
 
-<The story of the sequence in lettered paragraphs, one per phase or decision, each ending with the arrows it covers (diagrams.md §5):>
-**a. Receive and validate.** The client posts the payment. `PaymentHandler.Create` checks the body and answers 400 right away when `order_id` is missing. *(arrows 1–3)*
-**b. …** *(arrows 4–7)*
+<The detailed story (diagrams.md §5): a lettered heading per phase, one line per arrow (① ②…), each with its code reference inline:>
+**a. Receive and validate**
+① The client sends `POST /v1/payments` with `{order_id, amount}` and a bearer token, routed in `internal/router.go:22`.
+② `PaymentHandler.Create` validates the body (`internal/handler/payment.go:42-60`). If `order_id` is missing it answers `400 {error: "order_id required"}` and nothing is written.
+
+**b. …**
 
 <!-- docgen:section id="state-machine" -->
 ## State machines          ← only when the app has fsm on and a machine was found (state-machines.md §6)

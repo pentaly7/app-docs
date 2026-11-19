@@ -31,6 +31,7 @@ The narrow version of `generate`: it never creates docs for apps that aren't doc
    - `missing_app_state` → mention them and suggest generate. Don't bootstrap them here.
    - Apps whose stage isn't `done` → resume them per the pipeline table.
    - `diagram_changed` → redraw every app's diagrams (stage `redraw`), then set `diagram_version` to current.
+   - `story_changed` → rewrite every sequence story from the code (stage `restory`), then set `story_version` to current.
    - Apps with `fsm` newly turned on by this run → update with "FSM newly enabled: yes".
    - `humanizer_changed` → re-humanize every operator guide (stage `fixed`), then set `humanizer_version` to current.
 

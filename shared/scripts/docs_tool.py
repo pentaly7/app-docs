@@ -35,6 +35,8 @@ TEMPLATE_VERSION = 2
 HUMANIZER_VERSION = 2
 # Bumped when only diagram rules change: redraw diagrams, keep the text.
 DIAGRAM_VERSION = 8
+# Bumped when only the sequence-story rules change: re-read the code and rewrite the stories.
+STORY_VERSION = 3
 
 # Light colors used by diagrams.md §8 → their dark-palette counterparts (diagrams.md §8, dark column).
 DARK_FILL = {
@@ -95,6 +97,7 @@ DIAGRAM_SECTIONS = {
     "dev": {"structure": 1, "startup": 1, "data-flow": 1},
     "op": {"how-it-works": 2, "data-flow": 1},
 }
+STORY_LINE_RE = re.compile(r"^\s*(?:>\s*)?(?:[\u2460-\u2473]|\(\d+\))\s")   # ① … ⑳ or (21)
 DEV_ONLY_MARKS = ("**Unverified:**", "**Contradiction:**", "**Security finding:**")
 REQUIRED_SECTIONS = {
     "dev": ["overview", "structure", "setup", "startup", "app-flow", "data-flow", "dev-notes", "glossary"],
@@ -187,6 +190,7 @@ def cmd_meta(args):
         "template_version": TEMPLATE_VERSION,
         "humanizer_version": HUMANIZER_VERSION,
         "diagram_version": DIAGRAM_VERSION,
+        "story_version": STORY_VERSION,
     })
 
 
@@ -336,6 +340,8 @@ def cmd_drift(args):
         "humanizer_changed": state.get("humanizer_version") != HUMANIZER_VERSION,
         "diagram_version_current": DIAGRAM_VERSION,
         "diagram_changed": state.get("diagram_version") != DIAGRAM_VERSION,
+        "story_version_current": STORY_VERSION,
+        "story_changed": state.get("story_version", 1) != STORY_VERSION,
         "apps": {},
         "missing_app_state": [],
         "new_app_candidates": [],
@@ -539,6 +545,15 @@ def cmd_validate(args):
                 missing = {"flowchart", "sequence"} - {kind for kind, _ in _diagrams_in(text)}
                 if missing:
                     fail(doc_list[0].rel, 0, "diagram-missing", "section '%s' has no %s" % (sid, " or ".join(sorted(missing))))
+                elif prefix == "dev":
+                    # every arrow line of the story carries its code reference inline (diagrams.md §5)
+                    seq_at = max(text.rfind(".seq."), text.rfind("sequenceDiagram"))
+                    arrow_lines = [l for l in text[seq_at:].splitlines() if STORY_LINE_RE.match(l)]
+                    bare = [l.strip()[:1] for l in arrow_lines if not CODE_REF_RE.search(l)]
+                    if not arrow_lines:
+                        fail(doc_list[0].rel, 0, "story-missing", "section '%s': no arrow lines (① ②…) under the sequence diagram" % sid)
+                    elif bare:
+                        fail(doc_list[0].rel, 0, "story-code-missing", "section '%s': arrow lines without an inline file:line reference: %s" % (sid, " ".join(bare)))
 
         for machine in app_state.get("state_machines", []) if app_state.get("fsm") else []:
             sid = "state-machine/%s" % machine.get("id")
