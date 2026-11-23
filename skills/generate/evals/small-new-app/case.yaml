@@ -2,11 +2,12 @@ schema_version: "1.1"
 name: small-new-app
 expected_outcome: |
   For the small, recently written app (whose behavior the author knows well), the plugin writes
-  docs/<app-id>/dev-guide.md (English) and docs/<app-id>/operator-guide.md (semiformal Bahasa Indonesia humanized with humanizer-indonesia,
+  docs/<app-id>/dev-guide.md (English) and docs/<app-id>/operator-guide.md (titled User Guide, semiformal Bahasa Indonesia humanized with humanizer-indonesia,
   no slang, no Anda/kamu, tech terms in English, with a Cara Aplikasi Bekerja section), docs/.docgen/state.json and docs/.docgen/apps/<app-id>.json.
   Every flow is listed in both docs, important flows have a full section with a colored flowchart covering every branch plus a sequence diagram,
   structure/startup/data-flow diagrams exist,
-  every section has a provenance subtitle, the dev guide cites path:line for each process,
+  every section has a provenance subtitle, the dev guide cites each process as a GitLab permalink pinned to the section's commit,
+  the User Guide has a log index, alerts from the repo's rule file and owners from CODEOWNERS,
   the operator guide never cites files, no secret values appear, and the validator passes.
 context:
   scaffold_script: place-files.sh

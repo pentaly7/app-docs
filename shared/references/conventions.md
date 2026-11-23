@@ -1,4 +1,4 @@
-# Conventions (template version 2)
+# Conventions (template version 4)
 
 Every agent and script in this plugin follows this file. The validator (`docs_tool.py validate`) checks the parts marked **[checked]**, so breaking them shows up as a failure in the report.
 
@@ -13,6 +13,7 @@ Every agent and script in this plugin follows this file. The validator (`docs_to
 8. Unknown deployment facts
 9. Flows: important vs. listed
 10. When to split a doc
+11. Owners and escalation
 
 ---
 
@@ -26,7 +27,7 @@ Every agent and script in this plugin follows this file. The validator (`docs_to
 | Marks | Unverified, contradiction, security finding, removed, diagram-outdated | Only removed and diagram-outdated. Uncertain behavior is simply left out. |
 | Diagrams | Structure, startup, flowchart + sequence per important flow, data-flow, all colored with a legend (`diagrams.md`) | The same files: structure and startup go in `how-it-works` |
 
-Both docs describe the same code at the same commit. If they disagree, one of them is wrong.
+Both docs describe the same code at the same commit. If they disagree, one of them is wrong. The validator compares the facts in each section that exists in both guides (numbers with units such as `30s` or `5 menit`, `ALL_CAPS` keys such as `PAYMENT_TIMEOUT_MS`, HTTP status codes) and warns on any fact the User Guide has and the Dev Guide doesn't **[checked, warning]**. It doesn't fix them: the final report lists each mismatch for a person to decide.
 
 ## 2. File layout
 
@@ -37,8 +38,9 @@ docs/
 ├── .docgen/
 │   ├── state.json            # global index (see state-schema.md)  — committed
 │   ├── apps/<app-id>.json    # per-app section map               — committed
+│   ├── facts/<app-id>.json   # every table and list, as data      — committed (facts-schema.md)
 │   ├── .gitignore            # contains: .work/
-│   └── .work/                # review findings, scratch           — not committed
+│   └── .work/                # briefs, fragments, specs, reviews  — not committed
 └── <app-id>/
     ├── dev-guide.md          # single mode
     ├── operator-guide.md     # single mode
@@ -61,7 +63,7 @@ dev/06-data-flow.md  07-dev-notes.md  08-glossary.md
 
 operator/01-setup.md  02-how-it-works.md
 operator/03-app-flow/00-index.md  03-app-flow/<NN>-<flow-id>.md
-operator/04-data-flow.md  05-troubleshooting.md  06-glossary.md
+operator/04-data-flow.md  05-troubleshooting.md  05a-log-index.md  05b-alerts.md  05c-owners.md  06-glossary.md
 
 dev/05b-state-machine/00-index.md  05b-state-machine/<NN>-<machine-id>.md        # only with fsm
 operator/03b-state-machine/00-index.md  03b-state-machine/<NN>-<machine-id>.md   # only with fsm
@@ -79,7 +81,7 @@ Put an anchor comment on the line directly above every `##` and `###` heading th
 - IDs are stable. Never derive them from the heading text, which can be translated or reworded. Use the flow ID for flows.
 - Top-level IDs **[checked]**:
   - dev: `overview`, `structure`, `setup`, `startup`, `app-flow`, `data-flow`, `dev-notes`, `glossary`
-  - operator: `setup`, `how-it-works`, `app-flow`, `data-flow`, `troubleshooting`, `glossary`
+  - operator: `setup`, `how-it-works`, `app-flow`, `data-flow`, `troubleshooting`, `log-index`, `alerts`, `owners`, `glossary`
   - both, only when the app has `fsm` on and a state machine was found: `state-machine` plus `state-machine/<machine-id>` per machine (`state-machines.md`)
 - A flow has the ID `app-flow/<flow-id>` in **both** docs.
 - `<flow-id>` is kebab-case and stable: `create-payment`, `consume-order-created`, `page-checkout`, `cron-daily-settlement`.
@@ -89,28 +91,34 @@ Put an anchor comment on the line directly above every `##` and `###` heading th
 The line directly under every anchored heading **[checked]**:
 
 ```markdown
-> `a1b2c3d` · `main` · 2026-11-15 · verified by Jane Doe
+> generated at `a1b2c3d` on `main`, 2026-11-15, run by Jane Doe
 ```
 
 - Short SHA (7 characters), branch, date (YYYY-MM-DD), `git config user.name` of whoever ran the plugin. All four values come from `docs_tool.py meta`.
+- It says **generated**, not verified: it records which commit the text was written from and who ran the plugin. Nobody signed off on it.
 - Dirty working tree (`meta.dirty` true):
   ```markdown
-  > `a1b2c3d` + uncommitted changes · `feature/x` · 2026-11-15 · verified by Jane Doe
+  > generated at `a1b2c3d` + uncommitted changes on `feature/x`, 2026-11-15, run by Jane Doe
   ```
-- Same format in the operator guide. It isn't a mark, it's provenance.
+- Same format in the User Guide. It isn't a mark, it's provenance.
 - Only update the subtitle of a section you actually re-checked.
+- Docs from template version 2 (`· verified by`) are converted by `docs_tool.py migrate`; don't rewrite them by hand.
 
 ## 5. Code references
 
-Dev doc only. Format: a backtick span holding a repo-root-relative path, a colon, and a line or line range **[checked]**:
+Dev Guide only. Every reference is a GitLab permalink pinned to the **section's** commit, so it opens the exact lines the text was written from, even after the code moves on **[checked]**:
 
-```
-`services/payment/internal/handler/payment.go:42-88`
-`app/Http/Controllers/OrderController.php:120`
+```markdown
+[`services/payment/internal/handler/payment.go:42-88`](https://gitlab.example.com/team/shop/-/blob/a1b2c3d4e5f6/services/payment/internal/handler/payment.go#L42-88)
+[`app/Http/Controllers/OrderController.php:120`](https://gitlab.example.com/team/shop/-/blob/a1b2c3d4e5f6/app/Http/Controllers/OrderController.php#L120)
 ```
 
-- The validator checks that the file exists at the section's commit and that the lines are within the file.
-- No code snippets. Name the function or class in prose next to the reference: "`CreatePayment` handler (`.../payment.go:42-88`) validates the amount, then …".
+- The link base is `meta.web_url`; the commit is the full SHA from `meta.sha` for the section you're writing. Link text stays the plain `path:line` span, so the doc still reads well as plain text.
+- Marks (§6) use the same linked form.
+- `meta.web_url` is null (no `origin` remote): write the plain span without a link. The validator only asks for links when a remote exists.
+- `meta.head_pushed` is false: write the links anyway. They 404 until the commit is pushed; the final report says so.
+- The validator checks that the file exists at the section's commit, that the lines are within the file, that the link points at the section's commit, and warns when none of the functions named in the same sentence appear in the cited lines.
+- No code snippets. Name the function or class in prose next to the reference: "`CreatePayment` handler ([`.../payment.go:42-88`](…)) validates the amount, then …".
 - Reference where the process **runs**, not only where it's declared.
 
 ## 6. Marks
@@ -152,6 +160,18 @@ Operators need production facts (where logs go, health check URL, per-environmen
 - Dev: `_Unknown — not in this repository. Fill in manually._`
 - Operator: `_Belum diketahui: tidak ada di repository ini. Mohon diisi manual._`
 
+**Filling them in.** A person replaces a prose placeholder with a **keep block**, which no rewrite removes:
+
+```markdown
+<!-- app-docs:keep -->
+Deploy lewat ArgoCD, app `payment-prod`, namespace `payments`.
+<!-- /app-docs:keep -->
+```
+
+Agents copy keep blocks unchanged; a script puts back any that a rewrite dropped, at the end of the same section. Rendered tables (alerts, owners and escalation) can't hold a keep block; their placeholder names the field to fill in the facts file instead (`manual.alerts`, `manual.owners`, `manual.escalation`, facts-schema.md).
+
+Don't guess a team or a channel for alerts or escalation: the rendered tables print their own placeholder until someone fills `manual` in the facts file.
+
 ## 9. Flows: important vs. listed
 
 A **flow** is one entry point into the app: HTTP endpoint, gRPC method, queue/topic consumer, scheduled job, CLI command, or (frontend) a page/route.
@@ -177,3 +197,13 @@ Split mode (one file per section, one Docmost page per file) when **any** is tru
 - A frontend app has more than 10 pages/routes.
 
 Workers, consumers, CLIs, cron apps and libraries otherwise always use single mode.
+
+## 11. Owners and escalation
+
+The User Guide's `owners` section tells an operator who to contact. Take it from `docs_tool.py owners --root <app root>`, never from memory or from names seen in commit messages **[checked: section exists]**:
+
+- **CODEOWNERS covers the app:** its owners are both the owners and the escalation target. The script reads the first file GitLab would use (`CODEOWNERS`, then `docs/CODEOWNERS`, then `.gitlab/CODEOWNERS`) and applies GitLab's rules: last match wins inside a `[section]`, sections add up.
+- **No rule covers it:** owners are the top 3 committers to the app's folder over the last 6 months, and escalation is the unknown placeholder (§8). Committers know the code; that doesn't make them on call.
+- **Manual override:** `manual.owners` and `manual.escalation` in the facts file win over both. Use them when the escalation target isn't in CODEOWNERS.
+- The table is rendered from a snapshot taken once per run, so it doesn't change between runs just because time passed.
+- Write names and GitLab handles exactly as returned. Say where they came from ("dari CODEOWNERS", "dari riwayat commit 6 bulan terakhir"), so a reader knows how much to trust it.

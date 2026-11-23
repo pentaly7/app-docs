@@ -1,4 +1,4 @@
-# Operator guide template (template version 2, humanizer version 2)
+# User Guide template (template version 4, humanizer version 2)
 
 Audience: an operator who runs and monitors the app and wants to investigate an incident without asking a developer. They know servers, logs and databases, but they don't read the source code.
 
@@ -23,14 +23,14 @@ Audience: an operator who runs and monitors the app and wants to investigate an 
 
 The document title is the English "User Guide" (that's how it appears in GitLab and Docmost). Everything under it, headings included, stays in Bahasa Indonesia.
 
-Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagrams.md`: the same files as the dev guide.
+Anchors and subtitles exactly as in conventions §3–4. Tables and lists marked `docgen:render` are filled by `docs_tool.py render` from the facts file (`facts-schema.md`): write the facts, with their `id` text in this voice, and leave the markers empty. Diagrams as in `diagrams.md`: the same files as the dev guide.
 
 ```markdown
 # <App name>: User Guide
 
 <!-- docgen:section id="setup" -->
 ## 1. Setup
-> `a1b2c3d` · `main` · 2026-11-16 · verified by Jane Doe
+> generated at `a1b2c3d` on `main`, 2026-11-16, run by Jane Doe
 
 <1 sampai 2 kalimat: fungsi aplikasi dan penggunanya.>
 
@@ -38,10 +38,8 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 <database, broker, cache, service lain, beserta versinya>
 
 ### Konfigurasi
-| Key | Wajib | Fungsi | Contoh / default |
-|---|---|---|---|
-| `DB_DSN` | ya | Koneksi ke database Postgres | `<postgres://user:password@host:5432/db>` |
-| `PAYMENT_TIMEOUT_MS` | tidak | Batas waktu memanggil payment gateway | default `5000` |
+<!-- docgen:render id="config" -->
+<!-- /docgen:render -->
 
 ### Cara menjalankan
 <perintah start/stop/restart, port, cara memastikan aplikasi sudah siap>
@@ -65,34 +63,10 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 ## 3. Alur Aplikasi
 > …
 
-| Flow | Fungsi | Jika gagal, periksa |
-|---|---|---|
-| `POST /v1/payments` | Membuat pembayaran | log `payment create failed`, tabel `payments` |
+<!-- docgen:render id="flow-index" -->
+<!-- /docgen:render -->
 
-<!-- docgen:section id="app-flow/create-payment" -->
-### 3.1 Membuat pembayaran (`POST /v1/payments`)
-> …
-
-**Flowchart**
-<flowchart + sub-flows>
-
-1. Data request diperiksa lebih dulu. Jika `order_id` kosong, response `400`.
-2. …
-
-**Sequence**
-<sequence diagram>
-
-<Cerita detail (diagrams.md §5): judul tebal berhuruf kapital per fase, lalu daftar bernomor dengan nomor item sama dengan nomor panah, tanpa referensi kode. Tiap item menyebut log yang muncul, tabel atau file yang diperiksa, batas waktu, dan apa yang diterima caller:>
-**A. Terima dan validasi**
-
-1. Client mengirim `POST /v1/payments` berisi `{order_id, amount}`.
-
-2. Data diperiksa. Jika `order_id` kosong, client menerima `400` dan log berisi `invalid request` (level WARN). Tidak ada row baru di tabel `payments`.
-
-**B. …**
-
-**Tanda berhasil:** <row baru di tabel `payments` status `PENDING`, log `payment created`>
-**Jika gagal:** <gejala, penyebab yang paling mungkin, lalu apa yang diperiksa, untuk setiap cabang error di flowchart>
+<!-- docgen:flow id="create-payment" -->
 
 <!-- docgen:section id="state-machine" -->
 ## Status dan Perubahannya          ← hanya jika app memakai fsm dan state machine ditemukan (state-machines.md §6)
@@ -110,7 +84,10 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 ## 4. Alur Data
 > …
 
-<data-flow diagram, lalu tabel: jenis data, **jenis penyimpanan** (database / file storage / object storage / cache / queue) dan lokasi persisnya (tabel, path, bucket), siapa yang menulis dan membaca, lama penyimpanan>
+<data-flow diagram, lalu tabel yang dirender (facts `storage`):>
+
+<!-- docgen:render id="storage" -->
+<!-- /docgen:render -->
 
 <!-- docgen:section id="troubleshooting" -->
 ## 5. Troubleshooting
@@ -123,18 +100,49 @@ Anchors and subtitles exactly as in conventions §3–4. Diagrams as in `diagram
 <URL/perintah, arti tiap response>
 
 ### Error yang sering muncul
-| Pesan / gejala | Artinya | Yang diperiksa |
-|---|---|---|
+<!-- docgen:render id="common-errors" -->
+<!-- /docgen:render -->
 
 ### Config dan efeknya
-| Key | Jika diubah | Gejala jika salah |
-|---|---|---|
+<!-- docgen:render id="config-effects" -->
+<!-- /docgen:render -->
+
+<!-- docgen:section id="log-index" -->
+## 6. Indeks Pesan Log
+> …
+
+<Satu kalimat pengantar jika perlu. Tabel dirender dari facts `logs`: setiap pesan WARN ke atas dari flow yang didokumentasikan, ditambah pesan INFO yang menandai berhasil, dengan teks tetap persis seperti di kode.>
+
+<!-- docgen:render id="log-index" -->
+<!-- /docgen:render -->
+
+<!-- docgen:section id="alerts" -->
+## 7. Alert dan Monitoring
+> …
+
+### Metric
+<!-- docgen:render id="metrics" -->
+<!-- /docgen:render -->
+
+### Alert
+<Dirender dari facts `alerts`: hanya rule dari file di repo (`*.rules.yml`, `PrometheusRule`, `rule_files` di config Prometheus). Jangan mengarang alert.>
+
+<!-- docgen:render id="alerts" -->
+<!-- /docgen:render -->
+
+<!-- docgen:section id="owners" -->
+## 8. Pemilik dan Eskalasi
+> …
+
+<Dirender dari `docs_tool.py owners` (conventions §11).>
+
+<!-- docgen:render id="owners" -->
+<!-- /docgen:render -->
 
 <!-- docgen:section id="glossary" -->
-## 6. Glosarium
-| Istilah | Arti |
-|---|---|
-| Settlement | Proses harian yang menandai pembayaran yang sudah dibayarkan ke merchant |
+## 9. Glosarium
+<!-- docgen:render id="glossary" -->
+<!-- /docgen:render -->
 ```
 
 ## Good vs. weak "Jika gagal"

@@ -5,7 +5,7 @@
 
 The spec says WHAT is in the diagram (nodes, edges, the happy-path spine, notes, zones, sequence
 messages, phases). This script decides WHERE everything goes and how it looks, so agents never
-hand-place coordinates. Spec format: references/diagrams.md §13. Needs Graphviz `dot` on PATH for
+hand-place coordinates. Spec format: references/diagrams-spec.md §13. Needs Graphviz `dot` on PATH for
 everything except sequence diagrams. Python 3.8+, stdlib only. Exit codes: 0 ok, 2 bad spec or
 missing Graphviz.
 """
@@ -18,7 +18,7 @@ import subprocess
 import sys
 import textwrap
 
-# ---------------------------------------------------------------- palette (diagrams.md §8)
+# ---------------------------------------------------------------- palette (diagrams-style.md §8)
 
 TEXT = "#1A1A1A"
 NODE_STYLE = {

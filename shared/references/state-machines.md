@@ -34,7 +34,7 @@ Search in this order. Each step feeds the next.
 
    For each write, record the **guard** (the condition on the current state and anything else that must hold), the **trigger** (which endpoint, consumer, cron job, CLI command or UI action reaches this code), and the **side effects** (events published, rows written, external calls). Follow the call graph up from the write to find the trigger.
 4. **Reads that branch on state.** `switch (status)`, `if item.state == 1 …`: these show what each state *means* and which actions are allowed in it. They also expose implicit transitions you might have missed.
-5. **Writes from outside the request flow.** Cron/scheduled jobs (`expire PENDING after 24h`), consumers reacting to other apps' events, other apps in the repo that write the same table, migration scripts, and admin/manual SQL in runbooks or scripts. Each becomes a dashed transition (diagrams.md §12).
+5. **Writes from outside the request flow.** Cron/scheduled jobs (`expire PENDING after 24h`), consumers reacting to other apps' events, other apps in the repo that write the same table, migration scripts, and admin/manual SQL in runbooks or scripts. Each becomes a dashed transition (diagrams-app.md §12).
 6. **Apply the threshold** (section 1). A field passes when it has at least 3 states and at least 3 transitions.
 
 ## 3. The transition table
@@ -59,7 +59,7 @@ When the code uses bare numbers (`item.state == 1`) and nothing names them:
 - Infer a name from how the state is used (what's allowed in it, what moves into and out of it, log messages, UI labels, SQL comments, test names).
 - Dev doc: show `1 (inferred: ACTIVE)` and add an **Unverified** mark with the original author of the code that sets it (`docs_tool.py author`).
 - Operator guide: use the number and a plain description of the behavior only (`status 1: item sudah aktif dan bisa dipakai`), with no "inferred" wording and no mark.
-- Diagram: `? (1)` with the inferred name in a Note (diagrams.md §12).
+- Diagram: `? (1)` with the inferred name in a Note (diagrams-app.md §12).
 
 ## 5. Several machines
 

@@ -1,6 +1,6 @@
 ---
 name: update
-description: Report drift between the existing app docs in /docs and the current code, then fix only the affected sections (new flows added, removed flows marked, renamed files followed). Only touches apps that are already documented; use generate to document new apps. The operator guide is humanized with the humanizer-indonesia skill. Add "drawio" (or run the draw.io skill first) to redraw changed diagrams with draw.io, and "fsm" to add state machine sections to every documented app (remembered for later runs).
+description: Report drift between the existing app docs in /docs and the current code, then fix only the affected sections (new flows added, removed flows marked, renamed files followed). Only touches apps that are already documented; use generate to document new apps. The User Guide is humanized with the humanizer-indonesia skill. Add "drawio" (or run the draw.io skill first) to redraw changed diagrams with draw.io, and "fsm" to add state machine sections to every documented app (remembered for later runs).
 argument-hint: "[drawio] [fsm]"
 disable-model-invocation: true
 ---
@@ -27,16 +27,13 @@ The narrow version of `generate`: it never creates docs for apps that aren't doc
    New apps not documented: web/admin → run /app-docs:generate
    ```
 
-   - `template_changed` → say so. Every documented app gets regenerated (update mode, "Template changed: yes"), and `template_version` is set to current at the end.
+   - Plugin upgrades (template, diagrams, stories, humanizer) run only if the user accepted the upgrade plan in preflight (pipeline §2 step 6, §4).
    - `missing_app_state` → mention them and suggest generate. Don't bootstrap them here.
    - Apps whose stage isn't `done` → resume them per the pipeline table.
-   - `diagram_changed` → redraw every app's diagrams (stage `redraw`), then set `diagram_version` to current.
-   - `story_changed` → rewrite every sequence story from the code (stage `restory`), then set `story_version` to current.
    - Apps with `fsm` newly turned on by this run → update with "FSM newly enabled: yes".
-   - `humanizer_changed` → re-humanize every operator guide (stage `fixed`), then set `humanizer_version` to current.
 
-5. For each app with stale sections, run the update branch of the pipeline: app-documenter `update` → goldfish-reviewer limited to the changed sections → app-documenter `fix` → operator-humanizer on the changed operator sections → validate. Up to 3 apps in parallel, `state.json` written after every stage change.
+5. For each app with stale sections, run the update row of pipeline §4: app-documenter `update` for app-level sections and new or removed flows, a flow-documenter per stale or new important flow, assemble, goldfish on the changed sections, doc-fixer, the humanizer step on the changed User Guide sections, validate. At most 5 agents at a time, `state.json` written after every stage change.
 
 6. Final report (pipeline §6), plus the list of apps that were already up to date.
 
-Don't commit. Mention `/app-docs:sync` if any app changed.
+Then the sync and CI questions (pipeline §7). Don't commit.

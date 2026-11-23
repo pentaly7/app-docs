@@ -7,4 +7,4 @@ allowed_tools: [Read, Glob, Grep, Skill, Write, Edit, Bash, Agent]
 
 /app-docs:generate
 
-Input files: the benchmark repository (copied into files/ as a git repo, including .git)
+Input files: a small Go service, voucher-api. place-files.sh copies it into the working folder and makes it a git repo with a GitLab `origin` remote.

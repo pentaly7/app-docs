@@ -1,6 +1,6 @@
-# Humanizing the operator guide (humanizer version 2)
+# Humanizing the User Guide (humanizer version 2)
 
-The operator guide's prose is the last thing edited, by the **humanizer-indonesia** skill (github.com/adhiprib/humanizer-indonesia). This file says how the plugin runs that skill unattended, what it must not touch, and what to do when it isn't installed. The dev guide is never humanized.
+The User Guide's prose is the last thing edited, by the **humanizer-indonesia** skill (github.com/adhiprib/humanizer-indonesia). This file says how the plugin runs that skill unattended, what it must not touch, and what to do when it isn't installed. The dev guide is never humanized.
 
 ## Contents
 1. Settings the plugin decides for the skill
@@ -21,7 +21,6 @@ The skill normally asks its user a few questions in Step 1. You run unattended i
 | Was the source English? | No. It was written in Indonesian, from source code, by another model. Treat the run as an **edit** of model output, not a translation. |
 | Voice calibration | Use the plugin's preset `<Shared>/references/voice-operator-docs.md`. **Never** use the skill's bundled `voice-prib-id.md`: that's one academic author's personal voice. |
 | Term decisions | Already made by the plugin (section 2). Don't ask. |
-| Audit baseline | The operator guide as it is before your edit. Copy it to `docs/.docgen/.work/humanize-<app-id>-before.md` first. |
 
 ## 2. Where the plugin overrides the skill
 
@@ -37,7 +36,9 @@ Everything else in the skill applies: its AI-tells catalog, the mandatory calque
 
 These stay byte-for-byte identical, except where noted:
 
-- Anchor comments (`<!-- docgen:section … -->`), heading levels and order, subtitle lines (`` > `sha` · … ``)
+- Anchor comments (`<!-- docgen:section … -->`), heading levels and order, subtitle lines (`> generated at …`)
+- **Rendered blocks** (`<!-- docgen:render … -->` to `<!-- /docgen:render -->`): tables and lists generated from the facts file. Never touch them; the validator fails any difference.
+- **Keep blocks** (`<!-- app-docs:keep -->` to `<!-- /app-docs:keep -->`): written by a person. The plan never includes them.
 - Diagram embeds, Mermaid blocks, code spans and code blocks (`DB_DSN`, `kubectl logs …`)
 - Table structure. Only the prose inside cells may change.
 - Facts: numbers, units, durations, status codes, names of keys, tables, queues, endpoints and flows (flow labels must stay verbatim), the order of steps, and every "Jika gagal" cause and check
@@ -48,13 +49,13 @@ If a sentence can't be made natural without changing a fact, keep the fact and l
 
 ## 4. Process
 
-1. Save the "before" copy (section 1). Run the plugin validator and keep its failures as a baseline.
-2. If the skill has `scripts/metrik.py`, measure the operator guide: `python3 <skill>/scripts/metrik.py <file> --preset semiformal`. In split mode, measure each file.
-3. Follow the skill's workflow (read its catalog, draft, the mandatory checks, audit, final revision) with the settings and overrides above, prose only, sections in scope only.
-4. Measure again. Keep the before/after metrics table and the audit findings in `docs/.docgen/.work/humanize-<app-id>-report.md`. The skill's deliverables go there, not into the docs.
-5. Run the validator again. Any failure not in the baseline is yours. Restore that part.
+The orchestrator picks the paragraphs first (`docs_tool.py humanize-plan`): paragraphs with a known AI tell (section 5's list, pronouns, slang, dashes), and paragraphs the skill's `scripts/metrik.py --preset semiformal` marks `PERIKSA`. You get only those.
 
-The metrics guide the edit. They aren't a gate. A `PERIKSA` that would require dropping a fact or a step stays as it is, with a note in the report.
+1. Read the skill's catalog and rules (with the settings and overrides above).
+2. Edit each planned paragraph once, in place: the skill's mandatory checks (calque/diction, register) applied while you write, no separate draft, no audit report, no final revision pass.
+3. Paragraphs not in the plan stay as they are, even if you'd phrase them differently.
+
+The facts check after you (`facts-diff --strict`) is the gate. A `PERIKSA` that would require dropping a fact or a step stays as it is.
 
 ## 5. Fallback when the skill isn't installed
 

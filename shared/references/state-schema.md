@@ -11,11 +11,15 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 
 ```json
 {
-  "template_version": 2,
+  "template_version": 4,
   "humanizer_version": 2,
   "diagram_version": 8,
   "story_version": 4,
   "split_all": false,
+  "skills": {
+    "humanizer-indonesia": { "sha256": "3f2a…", "commit": "9c1d2e3f4a" },
+    "drawio": { "sha256": "b81c…", "commit": null }
+  },
   "apps": {
     "payment-api": {
       "root": "services/payment-api",
@@ -30,9 +34,11 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
     "root_url": "https://docmost.example.com/s/engineering",
     "method": "paste-markdown",
     "diagram_theme": "adaptive",
+    "list_numbers": "native",
+    "image_method": "clipboard-file",
     "pages": {
       "payment-api": { "url": "https://docmost.example.com/s/engineering/p/payment-api-x1y2" },
-      "payment-api/operator-guide.md": {
+      "payment-api/op": {
         "url": "https://…",
         "content_hash": "sha256:…",
         "synced_sha": "a1b2c3d4…",
@@ -44,20 +50,29 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 ```
 
 - `kind`: `backend` | `frontend` | `worker` | `cli` | `library`.
-- `stage` (per-app pipeline, used for resume): `pending` → `drafted` → `reviewed` → `fixed` → `done`. Also `failed`, with a `stage_error` string.
+- `stage` (per-app pipeline, used for resume): `pending` → `app-done` → `flows-done` → `drafted` → `reviewed` → `fixed` → `done`; also `redraw`, `restory`, `extend`, `facts` (pipeline §4), and `failed` with a `stage_error` string.
+- `flows_done`: important flows whose flow agent finished in the current pass (cleared when the app reaches `done`), so a resumed run starts only the missing ones.
 - `diagram_version`: the diagram rules the diagrams were last drawn with. When it differs from the plugin's, the next run redraws the diagrams only (text untouched).
 - `story_version`: the sequence-story rules the stories were last written with. When it differs from the plugin's, the next run re-reads the code and rewrites only the stories.
 - `apps.<id>.fsm`: state machine detection is on for this app. Set by running with `fsm`, kept for every later run.
 - `docmost.diagram_theme`: `adaptive` (light and dark palette, default) or `light` (always light), decided by the first sync's calibration.
 - `humanizer_version`: the humanizer rules the operator guides were last polished with. When it differs from the plugin's, the next run re-humanizes only.
 - `split_all`: true when the repo has more than 10 apps (conventions §10).
-- `docmost.pages` keys: the app ID for the app's container page; `<app-id>/operator` and `<app-id>/dev` for split-mode container pages; otherwise the doc file path relative to `docs/`. `docmost` stays `{}` until the first sync.
+- `docmost.pages` keys follow the doc's structure, not its file paths, so splitting a doc or renaming a file keeps the same Docmost page (and its URL, history and comments):
+  - `<app-id>`: the app's container page
+  - `<app-id>/dev`, `<app-id>/op`: the guide (single mode), or its container page (split mode)
+  - `<app-id>/dev/<first-anchor-id>`, `<app-id>/op/<first-anchor-id>`: one split-mode file, keyed by the first section anchor in it
+  `docs_tool.py migrate` converts keys from plugin versions before 2.9 (file paths). `docmost` stays `{}` until the first sync.
+- `docmost.list_numbers`: `native` or `bold` (calibration found Docmost renumbers lists, so numbers are written as `**5.**`).
+- `docmost.image_method`: how diagrams got into pages last time: `clipboard-file`, `file-upload` or `paste-script` (sync skill).
+- `skills`: the version of each outside skill used by the last run (`docs_tool.py skill-pin`), so a changed humanizer or draw.io skill is reported.
 
 ## `apps/<app-id>.json`
 
 ```json
 {
   "app_id": "payment-api",
+  "template_version": 4,
   "root": "services/payment-api",
   "language": "go",
   "framework": "gin",
@@ -86,7 +101,7 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
       "dirty": false,
       "branch": "main",
       "date": "2026-11-15",
-      "verified_by": "Jane Doe",
+      "run_by": "Jane Doe",
       "files": [
         "services/payment-api/internal/handler/payment.go",
         "services/payment-api/internal/service/payment.go"
@@ -100,8 +115,11 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 
 - In split mode, `docs.dev` and `docs.operator` are folders (`docs/payment-api/dev/`).
 - `flows[].kind`: `http` | `grpc` | `consumer` | `cron` | `cli` | `page` | `other`.
+- `flows[].subflows_owned` / `subflows_used`: shared sub-flow ids (`shared.<sub-id>` diagrams). Exactly one important flow owns each; its agent draws it.
 - `flows[].label` must appear verbatim in both docs. The validator checks this.
 - Section keys: `dev:<section-id>` or `op:<section-id>`, matching the anchors.
+- `blobs` / `blobs_at`: written by `docs_tool.py stamp`, never by agents. The git blob id of each file in `files` at the section's commit, so drift compares file contents and still works after a squash merge or rebase removes the commit.
+- `template_version` (app state, top level): the template this app's docs follow. Apps can differ during an upgrade; `state.json → template_version` is the lowest.
 - `files`: every repo-root-relative file whose change could make this section wrong. Drift detection depends on this list, so be generous. For `setup`, include the build files, config loader, `.env.example`, Dockerfile and CI files. `glossary` may be empty, since it's refreshed whenever any other section in the doc changes.
 - `diagram`: `drawio` | `mermaid` | `none`.
 - `fsm` / `state_machines`: see `state-machines.md` §7.

@@ -1,0 +1,17 @@
+groups:
+  - name: voucher-api
+    rules:
+      - alert: VoucherWalletUnavailable
+        expr: sum(rate(voucher_redeem_total{result="wallet_unavailable"}[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: Redemptions fail because the wallet can't be reached
+      - alert: VoucherExpiryStalled
+        expr: increase(voucher_expired_total[24h]) == 0
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: No voucher expired in 24 hours; the expiry ticker may be stuck

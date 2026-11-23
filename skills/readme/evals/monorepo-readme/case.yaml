@@ -2,8 +2,8 @@ schema_version: "1.1"
 name: monorepo-readme
 expected_outcome: |
   Every app folder gets a README.md rewritten from its Dev Guide only (what it is, tech stack, quick start,
-  configuration keys with placeholders, structure diagram, flows, doc links, owners, last-verified commit),
-  the repo root gets an index of all apps, contradicted claims from the old READMEs are gone and listed in the
-  report, the Docmost link appears only for apps that have been synced, and nothing is committed.
+  configuration keys with placeholders, structure diagram, flows, doc links, owners, generated-from commit),
+  the repo root gets an index of all apps, contradicted claims from the old READMEs are gone (and listed in the report when the Dev Guide
+  marked them), the READMEs are written by `docs_tool.py readme` without any agent, the Docmost link appears only for apps that have been synced, and nothing is committed.
 context:
   scaffold_script: place-files.sh
