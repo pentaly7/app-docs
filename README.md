@@ -17,7 +17,7 @@ Docs are written to `/docs`, with every table and list rendered by script from o
 | `/app-docs:readme` | Rewrites each app's `README.md` (and a monorepo root index) by script, with no model, as a condensed copy of its Dev Guide: what it is, tech stack, quick start, configuration, structure diagram, flows, doc links, owners (CODEOWNERS, else recent committers), the commit of its oldest section. Asks first if the Dev Guide is behind `HEAD`; stops if an app has no Dev Guide yet. |
 
 Skills this plugin uses:
-- **[humanizer-indonesia](https://github.com/adhiprib/humanizer-indonesia)** (dependency, always used): polishes the User Guide paragraphs a script flags (AI tells, or its own `metrik.py` marks them PERIKSA) in `semiformal` register, with the plugin's own voice preset (`shared/references/voice-operator-docs.md`). If it isn't installed, the plugin warns and uses its fallback rules. Install it with `git clone https://github.com/adhiprib/humanizer-indonesia ~/.claude/skills/humanizer-indonesia`.
+- **[humanizer-indonesia](https://github.com/adhiprib/humanizer-indonesia)** (dependency, always used): polishes every changed User Guide section, prose and table text in `semiformal` register, with the plugin's own voice preset (`shared/references/voice-operator-docs.md`). If it isn't installed, the plugin warns and uses its fallback rules. Install it with `git clone https://github.com/adhiprib/humanizer-indonesia ~/.claude/skills/humanizer-indonesia`.
 - **[draw.io skill](https://github.com/Agents365-ai/drawio-skill)** (optional): add `drawio` to the command, or run the skill first in the same session, to get editable `.drawio.svg` diagrams. Shapes are never placed by hand: agents write a small spec per diagram and the plugin's `shared/scripts/diagram_layout.py` lays it out with **Graphviz**: a straight happy path, side exits for errors, one shared channel for errors that continue, notes on the left, zones for data-flow, numbered circles in sequence diagrams. Without Graphviz the run stops and tells you how to install it. Without it, diagrams are colored Mermaid blocks. It uses `disable-model-invocation`, so when you ask for it the plugin reads its `SKILL.md` directly, because subagents can't inherit skills loaded in your session.
 
 ## Diagrams
@@ -56,12 +56,12 @@ generate/update (orchestrator, your session), at most 5 agents at a time, stages
        docs_tool.py assemble/render   → fragments into the guides; every table and list rendered from the facts
        goldfish-reviewer (Opus)       → fresh context: Dev Guide, facts and the User Guide-only sections vs. code
        doc-fixer (Sonnet)             → applies findings, reading only the code lines each one cites
-       docs_tool.py humanize-plan     → picks the User Guide paragraphs worth polishing (0 → no agent)
-       operator-humanizer (Sonnet)    → humanizer-indonesia on those paragraphs only, one pass
+       docs_tool.py humanize-plan     → every paragraph and table text of the User Guide sections changed in this run
+       operator-humanizer (Sonnet)    → humanizer-indonesia on all of it, one pass; table text through the facts file
        docs_tool.py facts-diff        → the humanizer may not change a number, name or status code
        docs_tool.py validate          → non-LLM checks; failures reported, not blocking
   └─ report with tokens per app and stage, and the previous run's total
-  └─ asks: sync to Docmost now?
+  └─ suggests running /app-docs:sync in a new conversation
 ```
 
 Diagrams are laid out and exported in one script call per agent (`docs_tool.py diagrams`); agents look only at the PNGs of diagrams it flags.
@@ -105,6 +105,10 @@ Add `fsm` once (`/app-docs:generate fsm`) and every app in the repo gets state m
 
 Upgrades are opt-in. When the plugin's rules are newer than the ones a repo's docs were written with, `generate`/`update` show what would be redone and a rough token estimate, and ask. "Not now" keeps the repo's versions: only real drift is fixed, the validator doesn't ask for newer sections, and you're asked again next run. Mechanical changes (titles, subtitles, links, page keys) are applied by `docs_tool.py migrate` without asking, because they cost nothing and the new conventions depend on them.
 
+From 2.10.2 (to 2.10.3): nothing to redo. The humanizer now polishes every paragraph and the table text of each User Guide section a run writes or changes (before: only flagged paragraphs, never tables). Sections that don't change aren't re-polished; to polish a whole existing guide once, bump `HUMANIZER_VERSION` and accept the upgrade.
+
+From 2.10.1: nothing to redo. Before the next run, commit (or answer "Commit first" when asked): docs written by 2.10.1 from a dirty tree marked every section dirty, and the first 2.10.2 run re-marks each section by its own files. If the repo lives on a Windows drive under WSL (`/mnt/d/...`), clone it into the Linux home folder; it removes false "modified" files and speeds up every step. New: flows that share code are documented by one agent (groups), sequence diagrams only for flows that call another system, each diagram uploaded to Docmost once and linked from other pages, and real token spend in the report (`usage-spend`, from Claude Code's session transcripts).
+
 From 2.10.0: nothing to redo. The GitLab CI check is gone (it could let a failing merge request merge in repos that use branch pipelines); delete `docs/.docgen/bin/`, `docs/.docgen/gitlab-ci.app-docs.yml` and their `include:` line if you added them. The next run stamps each section's file contents (squash merges no longer mark everything stale) and takes an owners snapshot. Keep blocks and `manual` facts are new; see "Filling in what the code can't say".
 
 From 2.9.x: if you accept the upgrade, each app's tables and lists move into `docs/.docgen/facts/<app>.json` (one agent run per app, no new research; `facts-diff` proves nothing was lost), and are rendered by script from then on. Without it, the docs stay as they are and updates keep working. Upgrade from 2.9.1 if you can: its token report is the baseline that shows what 2.10 saves.
@@ -144,6 +148,7 @@ Template version 2 changes diagrams, the operator guide's voice and its sections
 - **Docmost page titles:** only the app's page carries the app name. Sub-pages drop it ("User Guide", "Dev Guide"). The markdown files in GitLab keep their full H1.
 - **Docmost sync is UI automation.** Page text goes through the OS clipboard and a real paste, diagrams through Docmost's image upload. The first sync calibrates both and stops if your Docmost version doesn't support them; a page that fails later triggers one recalibration. A Docmost UI upgrade can still break it.
 - **Docmost inline comments don't survive a sync.** Each sync replaces the page body, so comments attached to text in it are lost or detached. URLs, page history and the page tree are kept. Keep notes in separate pages, or propose changes as a merge request on the markdown.
+- **Token figures:** the report's per-agent "final context" is each agent's context size at the end, not its spend. Compare runs on the spend line (`usage-spend`), which reads Claude Code's session transcripts; it can't see sessions run on another machine.
 - **Sync publishes whatever is in GitLab**, validator failures included: there is no gate. Check the last run's validator report (a `secret-*` failure especially) before you sync; a secret that reaches Docmost stays in its page history.
 - **Hand edits outside keep blocks are overwritten** by the next rewrite of that section, in the guides and in READMEs.
 - **Pages without a doc** (an app left the repo, a split doc was merged back) are never removed silently: sync asks whether to archive them (renamed and moved under an Archive page) or delete them (you click Delete).

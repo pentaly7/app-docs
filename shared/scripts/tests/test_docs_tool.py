@@ -514,18 +514,35 @@ class Rendering(unittest.TestCase):
 
     def test_briefs(self):
         out = self.tool("briefs", "--app-state", self.state, code=0)
-        brief = json.loads((self.repo.path / out["briefs"][0]).read_text())
-        self.assertEqual(brief["numbers"]["dev"], "5.1")
+        brief = json.loads((self.repo.path / out["briefs"][0]["brief"]).read_text())
+        self.assertEqual(brief["flows"][0]["numbers"]["dev"], "5.1")
         self.assertEqual(brief["terms"], ["Voucher"])
 
-    def test_humanize_plan_picks_only_paragraphs_with_tells(self):
+    def test_humanize_plan_covers_all_prose_and_table_text(self):
         self.tool("assemble", "--app-state", self.state, code=0)
         out = self.tool("humanize-plan", "--app-state", self.state, "--skill", "none", code=0)
-        plan = json.loads((self.repo.path / out["plan"]).read_text())["paragraphs"]
-        self.assertEqual(len(plan), 2)
-        self.assertIn("merupakan", plan[0]["reasons"])
-        self.assertIn("relative-pronoun calque", plan[1]["reasons"])
-        self.assertTrue(all("docgen:render" not in p["text"] and "|" not in p["text"] for p in plan))
+        plan = json.loads((self.repo.path / out["plan"]).read_text())
+        texts = [p["text"] for p in plan["paragraphs"]]
+        self.assertEqual(len(texts), 2, "every prose paragraph, not only flagged ones")
+        self.assertIn("merupakan", plan["paragraphs"][0]["hints"])
+        self.assertTrue(all("docgen:render" not in t and "|" not in t for t in texts))
+        strings = {s["facts_path"]: s["text"] for s in plan["facts_strings"]}
+        self.assertEqual(strings["config[0].meaning.id"], "Alamat wallet")
+        self.assertEqual(strings["flow_details.create.errors[0].cause.id"], "Caller tidak mengirim body.")
+        self.assertIn("glossary[0].id", strings)
+        scoped = self.tool("humanize-plan", "--app-state", self.state, "--skill", "none", "--scope", "op:glossary", code=0)
+        self.assertEqual((scoped["paragraphs"], scoped["facts_strings"]), (0, 1))
+
+    def test_facts_set_then_render(self):
+        self.tool("assemble", "--app-state", self.state, code=0)
+        edits = self.repo.path / "edits.json"
+        edits.write_text(json.dumps([{"facts_path": "config[0].meaning.id", "text": "Alamat layanan wallet"},
+                                     {"facts_path": "manual.escalation", "text": "x"}]))
+        out = run(self.repo.path, "facts-set", "--repo", str(self.repo.path), "--app-state", self.state, "--edits", str(edits))[1]
+        self.assertEqual(out["applied"], 1)
+        self.assertEqual(len(out["refused"]), 1)
+        self.tool("render", "--app-state", self.state, code=0)
+        self.assertIn("| `WALLET_URL` | ya | Alamat layanan wallet |", (self.repo.path / "docs/pay/operator-guide.md").read_text())
 
     def test_readme_is_rendered_without_code_refs(self):
         self.tool("assemble", "--app-state", self.state, code=0)

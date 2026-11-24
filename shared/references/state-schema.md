@@ -115,6 +115,10 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 
 - In split mode, `docs.dev` and `docs.operator` are folders (`docs/payment-api/dev/`).
 - `flows[].kind`: `http` | `grpc` | `consumer` | `cron` | `cli` | `page` | `other`.
+- `flows[].external`: the flow calls another system (diagrams §1); only then does it get a sequence diagram and story. Missing means true (docs from before 2.10.2).
+- `flows[].group`: flows documented by one flow agent together because they share most of their code. Missing means one group for all.
+- `stage_at`: when `stage` last changed, written by `docs_tool.py stage`.
+- `docmost.images`: content hash of each uploaded diagram → `{url, page, name}`, so other pages link to the upload instead of uploading again. Dropped when that page is archived or deleted. `docmost.image_reuse`: `off` when calibration found links to another page's image don't show.
 - `flows[].subflows_owned` / `subflows_used`: shared sub-flow ids (`shared.<sub-id>` diagrams). Exactly one important flow owns each; its agent draws it.
 - `flows[].label` must appear verbatim in both docs. The validator checks this.
 - Section keys: `dev:<section-id>` or `op:<section-id>`, matching the anchors.

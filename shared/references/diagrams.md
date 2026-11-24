@@ -25,11 +25,11 @@ Section numbers are the same in every file, so "diagrams §5" means section 5 wh
 | Structure (components and how they connect) | `structure` | `how-it-works` |
 | Startup flowchart | `startup` | `how-it-works` |
 | Flowchart per important flow, with sub-flows | `app-flow/<flow-id>` | `app-flow/<flow-id>` |
-| Sequence diagram per important flow | `app-flow/<flow-id>` | `app-flow/<flow-id>` |
+| Sequence diagram per important flow **that calls another system** (`external: true`) | `app-flow/<flow-id>` | `app-flow/<flow-id>` |
 | Data-flow diagram | `data-flow` | `data-flow` |
 | State diagram per state machine, plus an overview when 2+ machines drive each other (only when the app has `fsm` on; see `state-machines.md`) | `state-machine/<machine-id>` | `state-machine/<machine-id>` |
 
-Every cell above is required **[checked]**. Both docs use the **same files**, with English labels, so they never disagree. Flows that are only listed in the index table get no diagram.
+Every cell above is required **[checked]**. "Another system" means anything outside this app's own process and database: another service or app (also one in this repo), a third-party API, a message broker, a mainframe or gateway. A flow that only reads and writes its own database gets a flowchart and no sequence diagram or story: there is no conversation to draw. Both docs use the **same files**, with English labels, so they never disagree. Flows that are only listed in the index table get no diagram.
 
 ## 2. Mode and layout: never place shapes by hand
 

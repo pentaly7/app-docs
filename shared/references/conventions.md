@@ -96,7 +96,7 @@ The line directly under every anchored heading **[checked]**:
 
 - Short SHA (7 characters), branch, date (YYYY-MM-DD), `git config user.name` of whoever ran the plugin. All four values come from `docs_tool.py meta`.
 - It says **generated**, not verified: it records which commit the text was written from and who ran the plugin. Nobody signed off on it.
-- Dirty working tree (`meta.dirty` true):
+- Write the subtitle **without** a dirty mark. `docs_tool.py stamp` adds ` + uncommitted changes` afterwards, only to sections whose own files have uncommitted changes (and removes it once they're committed):
   ```markdown
   > generated at `a1b2c3d` + uncommitted changes on `feature/x`, 2026-11-15, run by Jane Doe
   ```

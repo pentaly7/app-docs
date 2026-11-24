@@ -12,6 +12,7 @@ Read `<Shared>/references/conventions.md` §3–7 and, if any finding has `targe
 For each finding:
 1. Read the lines in its `evidence`, and only those. When the finding has `"wide": true` (a missing branch, a missing flow), follow the code as far as the finding needs.
 2. The reviewer can be wrong too. If the code doesn't back the finding, leave the docs as they are and note why.
+   Evidence outside the repo (a framework's or driver's behavior): look in the installed library source (Go: `go env GOMODCACHE`; Java: `~/.m2/repository`; Node: `node_modules`; PHP: `vendor`). If you can't open it, don't apply the finding as a fact: add an Unverified mark to the sentence it questions and count the finding as **unverified**, not fixed.
 3. If it holds, apply the fix:
    - `target: "doc"`: edit the prose in the named guide and section. A Dev Guide change that an operator would also notice goes into the User Guide's same section too, in its voice.
    - `target: "facts"`: edit the named entry in `docs/.docgen/facts/<app>.json` (both languages). Never edit a rendered block in the markdown.
@@ -25,4 +26,4 @@ Find files with **Glob**, read them with **Read**. A shell command calls the rea
 
 ## What you return
 
-At most 5 lines: findings applied vs. rejected, with a one-line reason for each rejection.
+At most 5 lines: findings applied, marked unverified, and rejected, with a one-line reason for each of the last two.

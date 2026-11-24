@@ -37,7 +37,7 @@ Everything else in the skill applies: its AI-tells catalog, the mandatory calque
 These stay byte-for-byte identical, except where noted:
 
 - Anchor comments (`<!-- docgen:section … -->`), heading levels and order, subtitle lines (`> generated at …`)
-- **Rendered blocks** (`<!-- docgen:render … -->` to `<!-- /docgen:render -->`): tables and lists generated from the facts file. Never touch them; the validator fails any difference.
+- **Rendered blocks** (`<!-- docgen:render … -->` to `<!-- /docgen:render -->`): tables and lists generated from the facts file. Never edit them in the markdown (the validator fails any difference); change their Indonesian text in the facts file, as the plan lists it.
 - **Keep blocks** (`<!-- app-docs:keep -->` to `<!-- /app-docs:keep -->`): written by a person. The plan never includes them.
 - Diagram embeds, Mermaid blocks, code spans and code blocks (`DB_DSN`, `kubectl logs …`)
 - Table structure. Only the prose inside cells may change.
@@ -49,11 +49,11 @@ If a sentence can't be made natural without changing a fact, keep the fact and l
 
 ## 4. Process
 
-The orchestrator picks the paragraphs first (`docs_tool.py humanize-plan`): paragraphs with a known AI tell (section 5's list, pronouns, slang, dashes), and paragraphs the skill's `scripts/metrik.py --preset semiformal` marks `PERIKSA`. You get only those.
+The orchestrator writes the plan first (`docs_tool.py humanize-plan`): **every** prose paragraph of the User Guide sections written or changed in this run, each with the AI tells a script found in it as hints, plus the Indonesian facts text those sections' tables and lists are rendered from. Unchanged sections aren't redone. `metrik.py`'s sentence-length rows are reported once per guide, as a note.
 
 1. Read the skill's catalog and rules (with the settings and overrides above).
-2. Edit each planned paragraph once, in place: the skill's mandatory checks (calque/diction, register) applied while you write, no separate draft, no audit report, no final revision pass.
-3. Paragraphs not in the plan stay as they are, even if you'd phrase them differently.
+2. Edit each paragraph once, in place: the skill's mandatory checks (calque/diction, register) applied while you write, no separate draft, no audit report, no final revision pass.
+3. Table text is edited in the facts file through `docs_tool.py facts-set`, then rendered. Never in the markdown.
 
 The facts check after you (`facts-diff --strict`) is the gate. A `PERIKSA` that would require dropping a fact or a step stays as it is.
 

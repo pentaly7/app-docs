@@ -27,7 +27,7 @@ The narrow version of `generate`: it never creates docs for apps that aren't doc
    New apps not documented: web/admin → run /app-docs:generate
    ```
 
-   - Plugin upgrades (template, diagrams, stories, humanizer) run only if the user accepted the upgrade plan in preflight (pipeline §2 step 6, §4).
+   - Plugin upgrades (template, diagrams, stories, humanizer) run only if the user accepted the upgrade plan in preflight (pipeline §2 step 7, §4).
    - `missing_app_state` → mention them and suggest generate. Don't bootstrap them here.
    - Apps whose stage isn't `done` → resume them per the pipeline table.
    - Apps with `fsm` newly turned on by this run → update with "FSM newly enabled: yes".
@@ -36,4 +36,4 @@ The narrow version of `generate`: it never creates docs for apps that aren't doc
 
 6. Final report (pipeline §6), plus the list of apps that were already up to date.
 
-Then the sync and CI questions (pipeline §7). Don't commit.
+Then the line about syncing in a new conversation (pipeline §7). Don't commit.

@@ -14,12 +14,16 @@ Subcommands (all print JSON to stdout):
   readme-plan what /app-docs:readme needs per app: guides, verified commit vs HEAD, owners, links
   facts-snapshot / facts-diff   facts a rewrite must keep (numbers, names) before vs after
   keep-snapshot / keep-restore  hand-written <!-- app-docs:keep --> blocks survive every rewrite
-  humanize-plan  the User Guide paragraphs the humanizer should edit, and why
+  humanize-plan  every User Guide paragraph and table string in scope for the humanizer, with hints
+  facts-set   apply the humanizer's edits to the facts file's Indonesian text in one call
   briefs      one brief per important flow for the flow agents
   diagrams    lay out, export and check an app's diagrams in one call; PNGs only for flagged ones
   assemble    merge flow agents' fragments into the guides, facts and app state, then render
   readme      rewrite the READMEs from the Dev Guides and facts (no model)
-  stamp       record each section's file contents, so drift survives squash merges
+  check-fragment  a flow agent's self-check of its fragment before it finishes
+  stage / flow-done  record pipeline progress with the real time
+  usage-spend real token spend of a run, from Claude Code's transcripts
+  stamp       per-section dirty flag and subtitle, and file contents so drift survives squash merges
   render      fill the tables and lists in both guides from docs/.docgen/facts/<app>.json
   usage-record / usage-report   tokens each agent used, per run (local, for comparing runs)
   owners      owners and escalation target for one app (CODEOWNERS, else git history)
@@ -265,6 +269,8 @@ def cmd_meta(args):
         "short_sha": git(repo, "rev-parse", "--short=7", "HEAD").strip(),
         "branch": "detached" if branch == "HEAD" else branch,
         "dirty": bool(changed_paths_outside_docs(repo)),
+        "dirty_files": changed_paths_outside_docs(repo)[:50],
+        "windows_drive": bool(re.match(r"^/mnt/[a-z]/", str(Path(repo).resolve()))),
         "date": datetime.date.today().isoformat(),
         "user": git(repo, "config", "user.name", check=False).strip() or "unknown",
         "web_url": web_url(repo),
@@ -428,18 +434,78 @@ def _blob_ids(repo, sha, paths):
     return out
 
 
+DIRTY_MARK = " + uncommitted changes"
+
+
 def _stamp(repo, app_state):
-    stamped = 0
-    for section in app_state.get("sections", {}).values():
+    """Per section: dirty only when one of its own files has uncommitted changes (not when anything in
+    the tree does), the subtitle to match, and the blob ids of its files for drift."""
+    working = set(changed_paths_outside_docs(repo))
+    stamped, subtitle_fixes = 0, {}
+    for key, section in app_state.get("sections", {}).items():
+        dirty = any(p in working for p in section.get("files", []))
+        subtitle_fixes[key] = dirty
+        section["dirty"] = dirty
         sha = section.get("sha")
-        if not sha or section.get("dirty") or section.get("blobs_at") == sha:
+        if not sha or dirty or section.get("blobs_at") == sha:
             continue
         if not git(repo, "cat-file", "-t", sha, check=False).strip():
             continue
         section["blobs"] = _blob_ids(repo, sha, section.get("files", []))
         section["blobs_at"] = sha
         stamped += 1
+    for kind, doc_key in (("dev", "dev"), ("op", "operator")):
+        for path in _doc_files(Path(repo), app_state.get("docs", {}).get(doc_key, "")):
+            doc = Doc(path, Path(repo))
+            changed = False
+            for line_index, sid in doc.anchors:
+                want = subtitle_fixes.get("%s:%s" % (kind, sid))
+                if want is None:
+                    continue
+                for j in range(line_index + 1, min(line_index + 4, len(doc.lines))):
+                    line = doc.lines[j]
+                    if line.startswith("> generated at `"):
+                        new = line.replace(DIRTY_MARK, "") if not want else (
+                            line if DIRTY_MARK in line else re.sub(r"(^> generated at `[0-9a-f]+`)", r"\1" + DIRTY_MARK, line))
+                        if new != line:
+                            doc.lines[j] = new
+                            changed = True
+                        break
+            if changed:
+                path.write_text("\n".join(doc.lines) + "\n", encoding="utf-8")
     return stamped
+
+
+def _now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def cmd_stage(args):
+    """Set an app's pipeline stage with the real time (never hand-edit state.json for this)."""
+    path = Path(args.repo) / DOCS_DIR / ".docgen" / "state.json"
+    state = load_json(path)
+    app = state.setdefault("apps", {}).setdefault(args.app, {})
+    app["stage"] = args.stage
+    app["stage_at"] = _now()
+    if args.error:
+        app["stage_error"] = args.error
+    else:
+        app.pop("stage_error", None)
+    if args.stage == "done":
+        app.pop("flows_done", None)
+    save_json(path, state)
+    print("%s -> %s at %s" % (args.app, args.stage, app["stage_at"]))
+
+
+def cmd_flow_done(args):
+    path = Path(args.repo) / DOCS_DIR / ".docgen" / "state.json"
+    state = load_json(path)
+    done = state.setdefault("apps", {}).setdefault(args.app, {}).setdefault("flows_done", [])
+    for flow in args.flows.split(","):
+        if flow not in done:
+            done.append(flow)
+    save_json(path, state)
+    print("%s flows done: %s" % (args.app, ", ".join(done)))
 
 
 def cmd_stamp(args):
@@ -717,6 +783,72 @@ def _drawio_problems(path):
 
 
 
+def flow_section_problems(text, prefix, flow):
+    """Diagram and story rules for one important flow's section (diagrams-flow.md §4–5). A sequence
+    diagram and its story are required only for flows that call another system (`external`)."""
+    sid = "app-flow/%s" % flow["id"]
+    kinds = {kind for kind, _ in _diagrams_in(text)}
+    needed = {"flowchart", "sequence"} if flow.get("external", True) else {"flowchart"}
+    missing = needed - kinds
+    if missing:
+        return [("diagram-missing", "section '%s' has no %s" % (sid, " or ".join(sorted(missing))))]
+    if prefix != "dev" or "sequence" not in kinds:
+        return []
+    # every arrow line of the story carries its code reference inline (diagrams-flow.md §5)
+    seq_at = max(text.rfind(".seq."), text.rfind("sequenceDiagram"))
+    arrow_lines = [l for l in text[seq_at:].splitlines() if STORY_LINE_RE.match(l)]
+    bare = [STORY_LINE_RE.match(l).group(1) for l in arrow_lines if not CODE_REF_RE.search(l)]
+    if not arrow_lines:
+        return [("story-missing", "section '%s': no numbered arrow items under the sequence diagram" % sid)]
+    if bare:
+        return [("story-code-missing", "section '%s': arrow lines without an inline file:line reference: %s" % (sid, " ".join(bare)))]
+    return []
+
+
+def cmd_check_fragment(args):
+    """A flow agent's self-check before it finishes: its fragment against the rules validate will apply
+    after assembly (diagrams, stories, code references in range, no code in the User Guide)."""
+    repo = Path(args.repo).resolve()
+    frag = Path(args.fragment_dir)
+    if not frag.is_absolute():
+        frag = repo / frag
+    app_state = load_json(args.app_state)
+    flow = next((f for f in app_state.get("flows", []) if f["id"] == frag.name), {"id": frag.name})
+    part = load_json(frag / "state.json") if (frag / "state.json").exists() else {}
+    flow = dict(flow, **part.get("flow", {}))
+    files = FileAtCommit(repo)
+    problems = []
+    for kind in ("dev", "op"):
+        path = frag / ("%s.md" % kind)
+        if not path.exists():
+            if not (frag / ("story-%s.md" % kind)).exists():
+                problems.append({"file": path.name, "rule": "fragment-missing", "message": "no %s.md" % kind})
+            continue
+        text = path.read_text(encoding="utf-8")
+        for rule, message in flow_section_problems(text, kind, flow):
+            problems.append({"file": path.name, "rule": rule, "message": message})
+        section = part.get("sections", {}).get("%s:app-flow/%s" % (kind, frag.name), {})
+        sha = section.get("sha") or "HEAD"
+        for i, line in enumerate(text.splitlines(), start=1):
+            for m in CODE_REF_RE.finditer(line):
+                if not _is_code_ref(m.group(1), m.group(2), repo):
+                    continue
+                if kind == "op":
+                    problems.append({"file": path.name, "line": i, "rule": "code-ref-in-user-guide", "message": m.group(0)})
+                    continue
+                start = int(m.group(3)); end = int(m.group(4) or start)
+                count = files.line_count(sha, m.group(1))
+                if count is None:
+                    problems.append({"file": path.name, "line": i, "rule": "code-ref-file", "message": "%s not found" % m.group(1)})
+                elif end > count or end < start:
+                    problems.append({"file": path.name, "line": i, "rule": "code-ref-lines", "message": "%s: file has %d lines" % (m.group(0), count)})
+        for image in IMAGE_RE.findall(text):
+            target = repo / DOCS_DIR / app_state.get("app_id", "") / image
+            if not image.startswith("http") and not target.exists():
+                problems.append({"file": path.name, "rule": "image-missing", "message": image})
+    emit({"ok": not problems, "problems": problems}, 1 if problems else 0)
+
+
 def cmd_validate(args):
     repo = Path(args.repo).resolve()
     app_state = load_json(args.app_state)
@@ -764,18 +896,8 @@ def cmd_validate(args):
                 if text is None:
                     fail(doc_list[0].rel, 0, "flow-section-missing", "important flow '%s' has no section" % flow["id"])
                     continue
-                missing = {"flowchart", "sequence"} - {kind for kind, _ in _diagrams_in(text)}
-                if missing:
-                    fail(doc_list[0].rel, 0, "diagram-missing", "section '%s' has no %s" % (sid, " or ".join(sorted(missing))))
-                elif prefix == "dev":
-                    # every arrow line of the story carries its code reference inline (diagrams-flow.md §5)
-                    seq_at = max(text.rfind(".seq."), text.rfind("sequenceDiagram"))
-                    arrow_lines = [l for l in text[seq_at:].splitlines() if STORY_LINE_RE.match(l)]
-                    bare = [STORY_LINE_RE.match(l).group(1) for l in arrow_lines if not CODE_REF_RE.search(l)]
-                    if not arrow_lines:
-                        fail(doc_list[0].rel, 0, "story-missing", "section '%s': no numbered arrow items under the sequence diagram" % sid)
-                    elif bare:
-                        fail(doc_list[0].rel, 0, "story-code-missing", "section '%s': arrow lines without an inline file:line reference: %s" % (sid, " ".join(bare)))
+                for rule, message in flow_section_problems(text, prefix, flow):
+                    fail(doc_list[0].rel, 0, rule, message)
 
         for machine in app_state.get("state_machines", []) if app_state.get("fsm") else []:
             sid = "state-machine/%s" % machine.get("id")
@@ -915,12 +1037,23 @@ def cmd_validate(args):
             warnings.append("commit %s isn't on any remote branch: its code links 404 until it is pushed" % sha[:7])
 
     # the same section in both guides must not disagree on numbers, keys or status codes
+    # A User Guide fact must exist somewhere in the Dev Guide or the facts file, not necessarily in the
+    # same section (the guides arrange things differently). One warning per section, with a count.
     dev_sections, op_sections = _sections_of(docs["dev"]), _sections_of(docs["operator"])
-    for sid in sorted(set(dev_sections) & set(op_sections)):
-        dev_facts = section_facts(dev_sections[sid])
-        for fact in sorted(section_facts(op_sections[sid]) - dev_facts):
-            if FACT_UNIT_RE.fullmatch(fact) or FACT_KEY_RE.match(fact) or STATUS_RE.match(fact.lstrip("#")):
-                warnings.append("fact-mismatch in '%s': User Guide says `%s`, Dev Guide doesn't" % (sid, fact))
+    known = set()
+    for text in dev_sections.values():
+        known |= section_facts(text)
+    facts_file = repo / DOCS_DIR / ".docgen" / "facts" / ("%s.json" % app_state.get("app_id", ""))
+    if facts_file.exists():
+        raw = facts_file.read_text(encoding="utf-8")
+        known |= section_facts(raw)
+        known |= set(re.findall(r'"(?:key|name|message|symptom)":\s*"([^"]+)"', raw))
+    for sid in sorted(op_sections):
+        odd = sorted(f for f in section_facts(op_sections[sid])
+                     if (FACT_UNIT_RE.fullmatch(f) or FACT_KEY_RE.match(f) or STATUS_RE.match(f.lstrip("#")))
+                     and f not in known and f.lstrip("#") not in {k.lstrip("#") for k in known})
+        if odd:
+            warnings.append("fact-mismatch in '%s': %d fact(s) only in the User Guide: %s" % (sid, len(odd), ", ".join("`%s`" % f for f in odd[:5])))
 
     ids = [f["id"] for f in app_state.get("flows", [])]
     duplicates = sorted({i for i in ids if ids.count(i) > 1})
@@ -1070,8 +1203,6 @@ TELL_RES = [
     ("not only … but also", re.compile(r"\bTidak hanya\b.*\btetapi juga\b", re.I)),
     ("empty closing", re.compile(r"\bSemoga (bermanfaat|membantu)\b", re.I)),
 ]
-# metrik.py rows that can fire on one occurrence (connectors, light verbs, enumeration, merupakan, dashes).
-METRIK_SINGLE_RE = re.compile(r"konektor|connector|penghubung|light.?verb|kata kerja ringan|enumera|daftar tiga|triplet|merupakan|dash|tanda pisah|\u2014|\u2013", re.I)
 PROSE_SKIP_RE = re.compile(r"^(#|>|<!--|!\[|\||```)")
 
 
@@ -1118,49 +1249,116 @@ def docs_render_marker(stripped):
     return None
 
 
+# Which facts fields each User Guide block shows (Indonesian `id` text only; `manual` is people's text).
+BLOCK_FACT_FIELDS = {
+    "config": [("config", ["meaning"])],
+    "config-effects": [("config", ["if_changed", "if_wrong"])],
+    "storage": [("storage", ["data", "retention"])],
+    "common-errors": [("common_errors", ["symptom", "meaning", "check"])],
+    "log-index": [("logs", ["when", "meaning"])],
+    "metrics": [("metrics", ["meaning"])],
+    "alerts": [("alerts", ["when", "first_step"])],
+}
+
+
+def _table_strings(facts, block_id):
+    """[(path, text)] of the Indonesian facts strings a User Guide block renders. Paths look like
+    `config[2].meaning.id` or `flows.create.purpose.id`."""
+    out = []
+    name, _, flow = block_id.partition(":")
+    for key, fields in BLOCK_FACT_FIELDS.get(block_id, []):
+        for i, item in enumerate(facts.get(key, [])):
+            for field in fields:
+                if isinstance(item.get(field), dict) and item[field].get("id"):
+                    out.append(("%s[%d].%s.id" % (key, i, field), item[field]["id"]))
+    if block_id == "flow-index":
+        for fid, item in sorted(facts.get("flows", {}).items()):
+            for field in ("purpose", "check"):
+                if isinstance(item.get(field), dict) and item[field].get("id"):
+                    out.append(("flows.%s.%s.id" % (fid, field), item[field]["id"]))
+    if block_id == "glossary":
+        out += [("glossary[%d].id" % i, g["id"]) for i, g in enumerate(facts.get("glossary", [])) if g.get("id")]
+    if name == "if-failed" and flow:
+        for i, e in enumerate(facts.get("flow_details", {}).get(flow, {}).get("errors", [])):
+            for field in ("when", "cause", "check"):
+                if isinstance(e.get(field), dict) and e[field].get("id"):
+                    out.append(("flow_details.%s.errors[%d].%s.id" % (flow, i, field), e[field]["id"]))
+    return out
+
+
+_PATH_PART_RE = re.compile(r"([^.\[\]]+)|\[(\d+)\]")
+
+
+def cmd_facts_set(args):
+    """Apply a batch of text edits to the facts file in one call: a JSON list of {facts_path, text}, as
+    the humanizer writes them. Only existing Indonesian `id` strings can change; `manual` never."""
+    import docs_render
+    repo = Path(args.repo).resolve()
+    app_state = load_json(args.app_state)
+    path = docs_render.facts_path(repo, app_state["app_id"])
+    facts = load_json(path)
+    applied, refused = 0, []
+    for edit in load_json(args.edits):
+        parts = [m.group(1) if m.group(1) is not None else int(m.group(2)) for m in _PATH_PART_RE.finditer(edit["facts_path"])]
+        if not parts or parts[0] == "manual" or parts[-1] != "id":
+            refused.append({"facts_path": edit["facts_path"], "why": "only Indonesian id text outside manual can change"})
+            continue
+        node = facts
+        try:
+            for part in parts[:-1]:
+                node = node[part]
+            if not isinstance(node.get("id"), str):
+                raise KeyError("id")
+        except (KeyError, IndexError, TypeError, AttributeError):
+            refused.append({"facts_path": edit["facts_path"], "why": "no such field"})
+            continue
+        node["id"] = edit["text"]
+        applied += 1
+    save_json(path, facts)
+    emit({"applied": applied, "refused": refused}, 1 if refused else 0)
+
+
 def cmd_humanize_plan(args):
-    """Pick the User Guide paragraphs worth humanizing: those with a known AI tell, and those the
-    humanizer-indonesia metric script flags (PERIKSA). The humanizer edits only these, in one pass."""
+    """Everything the humanizer should polish in the User Guide sections in scope (default: all):
+    every prose paragraph, and the Indonesian facts text its tables and lists are rendered from.
+    Each paragraph lists the AI tells found in it, as hints. Keep blocks and `manual` facts are
+    people's text and never included."""
+    import docs_render
     repo = Path(args.repo).resolve()
     app_state = load_json(args.app_state)
     target = app_state.get("docs", {}).get("operator", "")
     scope = [s.split(":", 1)[1] for s in args.scope.split(",")] if args.scope else None
-    metrik = Path(args.skill).expanduser() / "scripts" / "metrik.py" if args.skill and args.skill != "none" else None
-    if metrik is not None and not metrik.is_file():
-        metrik = None
-    picked = []
+    facts = docs_render.load_facts(repo, app_state.get("app_id", ""))
+    paragraphs, strings, seen = [], [], set()
     for path in _doc_files(repo, target):
-        for para in _prose_paragraphs(Doc(path, repo), scope):
+        doc = Doc(path, repo)
+        for para in _prose_paragraphs(doc, scope):
             prose = re.sub(r"`[^`]*`", "", " ".join(para["text"].split()))
-            reasons = [name for name, rx in TELL_RES if rx.search(prose)]
-            reasons += ["pronoun"] if PRONOUN_RE.search(prose) else []
-            reasons += ["slang"] if SLANG_RE.search(prose) else []
-            reasons += ["dash"] if DASH_RE.search(prose) else []
-            if metrik and len(prose.split()) >= args.min_words:
-                tmp = _work(repo, "humanize", "%s-%d-%d.md" % (app_state.get("app_id", "app"), os.getpid(), para["start"]))
-                tmp.parent.mkdir(parents=True, exist_ok=True)
-                tmp.write_text(para["text"] + "\n", encoding="utf-8")
-                proc = subprocess.run([sys.executable, str(metrik), str(tmp), "--preset", "semiformal"],
-                                      capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
-                # Sentence-length and spread rows describe a whole document and flag almost any short
-                # paragraph, so per paragraph only rows that fire on a single occurrence count.
-                flags = [l.strip() for l in proc.stdout.splitlines()
-                         if proc.returncode == 0 and "PERIKSA" in l and METRIK_SINGLE_RE.search(l)]
-                reasons += ["metrik: %s" % f for f in flags[:3]]
-            if reasons:
-                picked.append(dict(para, reasons=reasons))
+            hints = [name for name, rx in TELL_RES if rx.search(prose)]
+            hints += ["pronoun"] if PRONOUN_RE.search(prose) else []
+            hints += ["slang"] if SLANG_RE.search(prose) else []
+            hints += ["dash"] if DASH_RE.search(prose) else []
+            paragraphs.append(dict(para, hints=hints))
+        for i, line in enumerate(doc.lines):
+            m = re.match(r'^<!--\s*docgen:render\s+id="([^"]+)"', line.strip())
+            if m and (scope is None or doc.section_at(i) in scope):
+                for fpath, text in _table_strings(facts, m.group(1)):
+                    if fpath not in seen:
+                        seen.add(fpath)
+                        strings.append({"facts_path": fpath, "text": text, "block": m.group(1)})
     guide_notes = []
-    if metrik:
+    metrik = Path(args.skill).expanduser() / "scripts" / "metrik.py" if args.skill and args.skill != "none" else None
+    if metrik is not None and metrik.is_file():
+        # sentence-length statistics only mean something for a whole guide: one note each, for the report
         for path in _doc_files(repo, target):
             proc = subprocess.run([sys.executable, str(metrik), str(path), "--preset", "semiformal"],
                                   capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
             guide_notes += ["%s: %s" % (Path(path).name, l.strip()) for l in proc.stdout.splitlines()
-                            if proc.returncode == 0 and "PERIKSA" in l and not METRIK_SINGLE_RE.search(l)]
+                            if proc.returncode == 0 and "PERIKSA" in l]
     plan = _work(repo, "humanize-%s-plan.json" % app_state.get("app_id", "app"))
-    save_json(plan, {"paragraphs": picked, "guide_notes": guide_notes})
-    emit({"plan": plan.relative_to(repo).as_posix(), "paragraphs": len(picked),
-          "metrik": bool(metrik), "guide_notes": guide_notes,
-          "note": None if metrik else "metrik.py not found: picked by tells only"})
+    save_json(plan, {"paragraphs": paragraphs, "facts_strings": strings, "guide_notes": guide_notes})
+    emit({"plan": plan.relative_to(repo).as_posix(), "paragraphs": len(paragraphs), "facts_strings": len(strings),
+          "with_hints": sum(1 for p in paragraphs if p["hints"]), "guide_notes": guide_notes})
 
 
 # ---------------------------------------------------------------- per-flow work: briefs, diagrams, assemble
@@ -1182,8 +1380,8 @@ def _flow_numbering(app_state):
 
 
 def cmd_briefs(args):
-    """One brief per important flow (or the --flows given), for the flow agents. Derived from the app
-    state and facts, so the orchestrator never has to write them."""
+    """One brief per flow group (the app agent groups flows that share most of their code), so one agent
+    reads a shared core once. Derived from the app state and facts; the orchestrator never writes them."""
     import docs_render
     repo = Path(args.repo).resolve()
     app_state = load_json(args.app_state)
@@ -1194,26 +1392,31 @@ def cmd_briefs(args):
     terms = sorted(g.get("term", "") for g in facts.get("glossary", []))
     owned = {sub: f["id"] for f in app_state.get("flows", []) for sub in f.get("subflows_owned", [])}
     out_dir = _work(repo, "briefs", app_id)
+    shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True, exist_ok=True)
-    written = []
+    groups = {}
     for flow in app_state.get("flows", []):
-        if flow["id"] not in wanted or flow["id"] not in numbering:
-            continue
-        brief = {"app_id": app_id, "flow": flow, "numbers": numbering[flow["id"]], "split": bool(app_state.get("split")),
-                 "terms": terms, "subflows_owned": flow.get("subflows_owned", []),
-                 "subflows_used": {sub: owned.get(sub) for sub in flow.get("subflows_used", [])},
-                 "fragment_dir": _work(repo, "fragments", app_id, flow["id"]).relative_to(repo).as_posix(),
+        if flow["id"] in wanted and flow["id"] in numbering and flow.get("status", "active") == "active":
+            groups.setdefault(flow.get("group") or "all", []).append(flow)
+    written = []
+    for group, flows in groups.items():
+        brief = {"app_id": app_id, "group": group, "split": bool(app_state.get("split")), "terms": terms,
                  "spec_dir": _work(repo, "specs", app_id).relative_to(repo).as_posix(),
-                 "existing": {kind: any(k == "%s:app-flow/%s" % (kind, flow["id"]) for k in app_state.get("sections", {}))
-                              for kind in ("dev", "op")}}
-        path = out_dir / ("%s.json" % flow["id"])
+                 "flows": [{"flow": f, "numbers": numbering[f["id"]],
+                            "subflows_owned": f.get("subflows_owned", []),
+                            "subflows_used": {sub: owned.get(sub) for sub in f.get("subflows_used", [])},
+                            "fragment_dir": _work(repo, "fragments", app_id, f["id"]).relative_to(repo).as_posix(),
+                            "existing": {kind: "%s:app-flow/%s" % (kind, f["id"]) in app_state.get("sections", {}) for kind in ("dev", "op")}}
+                           for f in flows]}
+        path = out_dir / ("%s.json" % group)
         save_json(path, brief)
-        written.append(path.relative_to(repo).as_posix())
+        written.append({"brief": path.relative_to(repo).as_posix(), "flows": [f["id"] for f in flows]})
     emit({"briefs": written})
 
 
 def _drawio_bin():
-    for candidate in ("drawio", "draw.io", "/Applications/draw.io.app/Contents/MacOS/draw.io"):
+    for candidate in ("drawio", "draw.io", "/Applications/draw.io.app/Contents/MacOS/draw.io",
+                      "/mnt/c/Program Files/draw.io/draw.io.exe", "/mnt/c/Program Files (x86)/draw.io/draw.io.exe"):
         if shutil.which(candidate) or Path(candidate).is_file():
             return shutil.which(candidate) or candidate
     return None
@@ -1234,6 +1437,13 @@ def cmd_diagrams(args):
     out_dir = repo / DOCS_DIR / args.app / "diagrams"
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
+    windows_exe = bool(drawio) and str(drawio).lower().endswith(".exe") and shutil.which("wslpath")
+
+    def native(path):
+        # the Windows draw.io app under WSL needs Windows paths
+        if not windows_exe:
+            return str(path)
+        return subprocess.run(["wslpath", "-w", str(path)], capture_output=True, text=True).stdout.strip()
     for spec in specs:
         name = spec.stem                       # create-payment.flow → create-payment.flow.drawio.svg
         source = _work(repo, "drawio", args.app, name + ".drawio")
@@ -1255,7 +1465,7 @@ def cmd_diagrams(args):
         if drawio:
             svg = out_dir / (name + ".drawio.svg")
             try:
-                export = subprocess.run([drawio, "-x", "-f", "svg", "-e", "-o", str(svg), str(source)],
+                export = subprocess.run([drawio, "-x", "-f", "svg", "-e", "-o", native(svg), native(source)],
                                         capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
                 message = (export.stderr or export.stdout).strip()[-300:]
                 exported = export.returncode == 0 and svg.exists()
@@ -1269,7 +1479,7 @@ def cmd_diagrams(args):
                 png = _work(repo, "png", args.app, name + ".png")
                 png.parent.mkdir(parents=True, exist_ok=True)
                 try:
-                    subprocess.run([drawio, "-x", "-f", "png", "-o", str(png), str(source)],
+                    subprocess.run([drawio, "-x", "-f", "png", "-o", native(png), native(source)],
                                    capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
                 except (OSError, subprocess.TimeoutExpired):
                     pass
@@ -1471,6 +1681,64 @@ def _plugin_version():
         return json.loads(manifest.read_text()).get("version")
     except (OSError, ValueError):
         return None
+
+
+def _transcript_dirs():
+    base = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
+    return [base] if base.is_dir() else []
+
+
+def cmd_usage_spend(args):
+    """Real token spend of a run, from Claude Code's session transcripts (~/.claude/projects/**.jsonl):
+    every assistant message's usage, deduplicated by message id, since the run started, for sessions
+    whose working directory is this repo. Split by transcript (the main session and each subagent)."""
+    repo = str(Path(args.repo).resolve())
+    since = args.since
+    seen, per_file = set(), {}
+    for base in _transcript_dirs():
+        for path in base.rglob("*.jsonl"):
+            try:
+                modified = datetime.datetime.fromtimestamp(path.stat().st_mtime, datetime.timezone.utc)
+                if modified.strftime("%Y-%m-%dT%H:%M:%SZ") < since:
+                    continue
+                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
+            for line in lines:
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                message = entry.get("message") if isinstance(entry.get("message"), dict) else {}
+                usage = message.get("usage")
+                if not usage or (entry.get("timestamp") or "") < since:
+                    continue
+                if entry.get("cwd") and not str(entry["cwd"]).startswith(repo):
+                    continue
+                key = message.get("id") or entry.get("requestId") or entry.get("uuid")
+                if key in seen:
+                    continue
+                seen.add(key)
+                row = per_file.setdefault(str(path), {"model": message.get("model"), "messages": 0, "input": 0, "output": 0,
+                                                      "cache_write": 0, "cache_read": 0,
+                                                      "subagent": bool(entry.get("isSidechain")) or "subagent" in str(path)})
+                row["messages"] += 1
+                row["input"] += usage.get("input_tokens") or 0
+                row["output"] += usage.get("output_tokens") or 0
+                row["cache_write"] += usage.get("cache_creation_input_tokens") or 0
+                row["cache_read"] += usage.get("cache_read_input_tokens") or 0
+    if not per_file:
+        emit({"error": "no transcript entries since %s for %s (looked in %s)" % (since, repo, [str(d) for d in _transcript_dirs()]),
+              "note": "token figures from agent completion notices are final context size, not spend"}, 2)
+    keys = ("input", "output", "cache_write", "cache_read")
+    totals = {k: sum(r[k] for r in per_file.values()) for k in keys}
+    by_model = {}
+    for r in per_file.values():
+        m = by_model.setdefault(r["model"] or "?", dict.fromkeys(keys, 0))
+        for k in keys:
+            m[k] += r[k]
+    emit({"since": since, "transcripts": len(per_file), "totals": totals, "by_model": by_model,
+          "agents": sorted(({"file": Path(f).name, **r} for f, r in per_file.items()), key=lambda r: -r["output"])})
 
 
 def cmd_usage_report(args):
@@ -1935,9 +2203,15 @@ def _readme_plan(repo):
 NUMBERED_ITEM_RE = re.compile(r"^(\s*)(\d+)\.\s+")
 
 
-def _prepare_markdown(path, bold_numbers=False):
-    """Strip docgen anchors and the H1; swap drawio images for upload placeholders. Returns (text, [abs image paths])."""
-    images = []
+def _image_hash(path):
+    return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest() if Path(path).is_file() else None
+
+
+def _prepare_markdown(path, bold_numbers=False, uploaded=None):
+    """Strip docgen anchors and the H1; swap drawio images for upload placeholders, or, when the same
+    file was already uploaded to Docmost (`uploaded`: content hash → url), for a link to that upload.
+    Returns (text, [abs image paths to upload], [(name, hash)] of every image in page order)."""
+    images, order = [], []
     out = []
     title_dropped = False
     in_fence = False
@@ -1955,10 +2229,14 @@ def _prepare_markdown(path, bold_numbers=False):
 
         def swap(match):
             image = (Path(path).parent / match.group(1)).resolve()
+            digest = _image_hash(image)
+            order.append((image.name, digest))
+            if uploaded and digest in uploaded:
+                return "![%s](%s)" % (image.stem, uploaded[digest]["url"])
             images.append(str(image))
             return "[[diagram:%s]]" % image.name
         out.append(IMAGE_RE.sub(swap, line))
-    return "\n".join(out).strip() + "\n", images
+    return "\n".join(out).strip() + "\n", images, order
 
 
 PASTE_JS = r"""(async () => {
@@ -2051,6 +2329,14 @@ PREPARE_JS = r"""(() => {
 })()
 """
 
+IMAGES_JS = r"""(() => {
+  // Lists the image addresses in the page body, in order, for sync-record --image-urls.
+  const eds = [...document.querySelectorAll('.ProseMirror[contenteditable="true"]')];
+  const body = eds[eds.length - 1];
+  return JSON.stringify([...body.querySelectorAll('img')].map(i => i.getAttribute('src')));
+})()
+"""
+
 CHECK_JS = r"""(() => {
   // Reports what the open page body holds, so sync can confirm instead of waiting on timers.
   const expect = %(expect)s;
@@ -2115,13 +2401,15 @@ def cmd_sync_plan(args):
     state = load_json(repo / DOCS_DIR / ".docgen" / "state.json")
     synced = state.get("docmost", {}).get("pages", {})
     bold_numbers = state.get("docmost", {}).get("list_numbers") == "bold"
+    # an image uploaded once (on any page) is linked from every other page, unless calibration found that broken
+    uploaded = {} if state.get("docmost", {}).get("image_reuse") == "off" else state.get("docmost", {}).get("images", {})
     work = repo / DOCS_DIR / ".docgen" / ".work" / "sync"
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     pages = []
 
     def add(key, parent, title, source=None):
-        text, images = _prepare_markdown(source, bold_numbers) if source else ("", [])
+        text, images, order = _prepare_markdown(source, bold_numbers, uploaded) if source else ("", [], [])
         # Title is part of the hash, so a renamed page is re-synced even when its body didn't change.
         digest = hashlib.sha256((title + "\n" + text).encode())
         for image in images:
@@ -2133,11 +2421,13 @@ def cmd_sync_plan(args):
         for name, template, values in (("prepare_js", PREPARE_JS, {"title": json.dumps(title, ensure_ascii=False)}),
                                        ("check_js", CHECK_JS, {"expect": json.dumps({"images": len(images), "placeholders_left": 0,
                                                                                     "headings": _heading_count(text)})}),
+                                       ("images_js", IMAGES_JS, {}),
                                        ("paste_js", None, None), ("paste_text_js", None, None)):
             path = base.with_suffix("." + name.replace("_", "."))
-            body = _paste_js(title, text, images if name == "paste_js" else []) if template is None else template % values
+            body = _paste_js(title, text, images if name == "paste_js" else []) if template is None else (template % values if values else template)
             path.write_text(body, encoding="utf-8")
             files[name] = str(path)
+        (base.parent / (base.name + ".order.json")).write_text(json.dumps(order), encoding="utf-8")
         image_list = []
         for n, image in enumerate(images, start=1):
             name = Path(image).name
@@ -2151,7 +2441,7 @@ def cmd_sync_plan(args):
                 entry["image_js"] = str(fallback)
             image_list.append(entry)
         entry = {"key": key, "parent": parent, "title": title, "existing_url": synced.get(key, {}).get("url"),
-                 "container": source is None, "images": image_list, "content_hash": "sha256:" + digest.hexdigest()}
+                 "container": source is None, "images": image_list, "images_linked": len(order) - len(images), "content_hash": "sha256:" + digest.hexdigest()}
         entry.update(files)
         entry["changed"] = synced.get(key, {}).get("content_hash") != entry["content_hash"]
         pages.append(entry)
@@ -2215,8 +2505,24 @@ def cmd_sync_record(args):
         docmost["list_numbers"] = args.list_numbers
     if args.image_method:
         docmost["image_method"] = args.image_method
+    if args.image_reuse:
+        docmost["image_reuse"] = args.image_reuse
+        if args.image_reuse == "off":
+            docmost.pop("images", None)
     if args.remove_key:
         docmost.setdefault("pages", {}).pop(args.remove_key, None)
+        # images uploaded on that page go with it: the next page that needs them uploads them again
+        docmost["images"] = {h: v for h, v in docmost.get("images", {}).items() if v.get("page") != args.remove_key}
+    if args.key and args.image_urls:
+        order_file = repo / DOCS_DIR / ".docgen" / ".work" / "sync" / (args.key.replace("/", "__").replace(":", "_") + ".order.json")
+        order = json.loads(order_file.read_text()) if order_file.exists() else []
+        urls = json.loads(args.image_urls)
+        if len(urls) == len(order):
+            for (name, digest), url in zip(order, urls):
+                if digest and url and not url.startswith(("blob:", "data:")) and digest not in docmost.get("images", {}):
+                    docmost.setdefault("images", {})[digest] = {"url": url, "page": args.key, "name": name}
+        else:
+            print(json.dumps({"warning": "page has %d images, plan has %d: image addresses not recorded" % (len(urls), len(order))}))
     if args.key and not args.remove_key:
         page = docmost.setdefault("pages", {}).setdefault(args.key, {})
         if args.url:
@@ -2256,6 +2562,8 @@ def main():
     p.add_argument("--list-numbers", choices=["native", "bold"])
     p.add_argument("--image-method", choices=["clipboard-file", "file-upload", "paste-script"])
     p.add_argument("--remove-key", help="forget a page (after it was archived or deleted)")
+    p.add_argument("--image-urls", help="images_js output for --key: records each uploaded image's address for reuse")
+    p.add_argument("--image-reuse", choices=["ok", "off"], help="calibration result: can pages link to an image uploaded on another page")
     p = sub.add_parser("facts-snapshot")
     p.add_argument("--repo", default=".")
     p.add_argument("--app-state", required=True)
@@ -2283,7 +2591,10 @@ def main():
     p.add_argument("--app-state", required=True)
     p.add_argument("--scope", help="comma-separated op: section keys (default: all)")
     p.add_argument("--skill", help="humanizer-indonesia folder, or none")
-    p.add_argument("--min-words", type=int, default=30, help="shorter paragraphs are checked by tells only")
+    p = sub.add_parser("facts-set")
+    p.add_argument("--repo", default=".")
+    p.add_argument("--app-state", required=True)
+    p.add_argument("--edits", required=True, help="JSON file: [{\"facts_path\": \"config[0].meaning.id\", \"text\": \"…\"}]")
     p = sub.add_parser("briefs")
     p.add_argument("--repo", default=".")
     p.add_argument("--app-state", required=True)
@@ -2296,6 +2607,22 @@ def main():
     p = sub.add_parser("assemble")
     p.add_argument("--repo", default=".")
     p.add_argument("--app-state", required=True)
+    p = sub.add_parser("check-fragment")
+    p.add_argument("--repo", default=".")
+    p.add_argument("--app-state", required=True)
+    p.add_argument("--fragment-dir", required=True)
+    p = sub.add_parser("stage")
+    p.add_argument("--repo", default=".")
+    p.add_argument("--app", required=True)
+    p.add_argument("--stage", required=True)
+    p.add_argument("--error")
+    p = sub.add_parser("flow-done")
+    p.add_argument("--repo", default=".")
+    p.add_argument("--app", required=True)
+    p.add_argument("--flows", required=True, help="comma-separated flow ids")
+    p = sub.add_parser("usage-spend")
+    p.add_argument("--repo", default=".")
+    p.add_argument("--since", required=True, help="the run's start time, UTC, e.g. 2026-11-23T04:30:00Z")
     p = sub.add_parser("stamp")
     p.add_argument("--repo", default=".")
     p.add_argument("--app-state", required=True)
@@ -2333,7 +2660,8 @@ def main():
     handlers = {"meta": cmd_meta, "detect": cmd_detect, "author": cmd_author, "drift": cmd_drift,
                 "validate": cmd_validate, "svg-theme": cmd_svg_theme, "migrate": cmd_migrate, "readme-plan": cmd_readme_plan,
                 "facts-snapshot": cmd_facts_snapshot, "facts-diff": cmd_facts_diff, "owners": cmd_owners,
-                "render": cmd_render, "keep-snapshot": cmd_keep_snapshot, "keep-restore": cmd_keep_restore, "stamp": cmd_stamp, "readme": cmd_readme, "humanize-plan": cmd_humanize_plan, "briefs": cmd_briefs, "diagrams": cmd_diagrams, "assemble": cmd_assemble, "usage-record": cmd_usage_record, "usage-report": cmd_usage_report,
+                "render": cmd_render, "keep-snapshot": cmd_keep_snapshot, "keep-restore": cmd_keep_restore, "stamp": cmd_stamp, "check-fragment": cmd_check_fragment, "stage": cmd_stage,
+                "flow-done": cmd_flow_done, "usage-spend": cmd_usage_spend, "readme": cmd_readme, "humanize-plan": cmd_humanize_plan, "facts-set": cmd_facts_set, "briefs": cmd_briefs, "diagrams": cmd_diagrams, "assemble": cmd_assemble, "usage-record": cmd_usage_record, "usage-report": cmd_usage_report,
                 "upgrade-plan": cmd_upgrade_plan, "skill-pin": cmd_skill_pin, "clip": cmd_clip, "sync-plan": cmd_sync_plan, "sync-record": cmd_sync_record}
     try:
         handlers[args.cmd](args)

@@ -22,19 +22,20 @@ You are the orchestrator. You never read application code yourself. You run the 
 ## 2. Preflight
 
 1. Not inside a git repo → stop and say so. Provenance and drift both need git.
-2. Run `TOOL meta --repo REPO`. Keep the JSON (`sha`, `short_sha`, `branch`, `dirty`, `date`, `user`, `web_url`, `head_pushed`).
-3. One-line warnings, then continue:
-   - `dirty` true: "Uncommitted changes: sections will be marked `+ uncommitted changes`."
+2. Run `TOOL meta --repo REPO`. Keep the JSON (`sha`, `short_sha`, `branch`, `dirty`, `dirty_files`, `date`, `user`, `web_url`, `head_pushed`, `windows_drive`).
+3. `dirty` true and someone is there to answer: ask once with AskUserQuestion, listing up to 10 of `dirty_files`: **Commit first** (stop here; they commit and run again) or **Continue** (sections whose own files changed get marked `+ uncommitted changes` by `stamp` and count as stale next time; other sections don't). Unattended: continue.
+   `windows_drive` true (WSL on `/mnt/c`, `/mnt/d`…): warn once that git, search and diagram layout run several times slower there and that file-mode or line-ending noise can show every file as changed; suggest cloning the repo into the Linux home folder.
+4. One-line warnings, then continue:
    - `web_url` null: "No `origin` remote: code references stay plain text, without GitLab links."
    - `head_pushed` false: "HEAD isn't pushed yet: the Dev Guide's code links will 404 until you push it."
-4. Make sure `docs/.docgen/.gitignore` exists and contains `.work/`. Run `TOOL migrate --repo REPO` (no LLM, idempotent). It applies the mechanical changes from older plugin versions: the "User Guide" title, the "generated at … run by …" subtitle, GitLab permalinks around code references, and Docmost page keys. These are free, and the new conventions need them, so they aren't part of the opt-in below. Mention the counts it returns in one line if any are non-zero.
-5. If `docs/.docgen/bin/` or `docs/.docgen/gitlab-ci.app-docs.yml` exists (the CI check from 2.9–2.10.0, now removed), say once that both can be deleted, together with their `include:` line in `.gitlab-ci.yml`. Don't delete them yourself.
-6. **Upgrade plan (opt-in).** If `state.json` exists, run `TOOL upgrade-plan --repo REPO`. When `pending` is empty, go on. Otherwise ask once with AskUserQuestion, showing each item's `what`, `units` and `tokens`, and the total:
+5. Make sure `docs/.docgen/.gitignore` exists and contains `.work/`. Run `TOOL migrate --repo REPO` (no LLM, idempotent). It applies the mechanical changes from older plugin versions: the "User Guide" title, the "generated at … run by …" subtitle, GitLab permalinks around code references, and Docmost page keys. These are free, and the new conventions need them, so they aren't part of the opt-in below. Mention the counts it returns in one line if any are non-zero.
+6. If `docs/.docgen/bin/` or `docs/.docgen/gitlab-ci.app-docs.yml` exists (the CI check from 2.9–2.10.0, now removed), say once that both can be deleted, together with their `include:` line in `.gitlab-ci.yml`. Don't delete them yourself.
+7. **Upgrade plan (opt-in).** If `state.json` exists, run `TOOL upgrade-plan --repo REPO`. When `pending` is empty, go on. Otherwise ask once with AskUserQuestion, showing each item's `what`, `units` and `tokens`, and the total:
    - **Upgrade now**: apply every pending action (section 4).
    - **Not now**: keep the repo's versions in `state.json`. This run fixes real drift and resumes unfinished apps only. The validator doesn't ask for sections from a newer template. The question comes back on the next run.
    When nobody is there to answer (a scheduled run), take "Not now" and say so in the report.
    **Exception: template 3 → 4 (`facts`).** The writers only know template 4: they write rendered blocks and facts entries, never hand-made tables. An app still on template 3 that has drift gets its `facts` stage first, even after "Not now", because updating it otherwise would leave tables half-rendered from a facts file that holds only the changed entries. Say so in the question ("apps with code changes are converted anyway, about 40k tokens each") and in the report. Apps without drift stay on template 3 until the user accepts. The template version is recorded **per app** (`apps/<id>.json → template_version`): the `facts` stage sets the app's to 4, and `state.json → template_version` stays the lowest of all apps.
-7. If the arguments contain `fsm`: set `fsm: true` for **every** app in `state.json` (and every app added in this run). It stays on for later runs without the word. An app that was `done` with `fsm` false gets the "FSM newly enabled" update (section 4).
+8. If the arguments contain `fsm`: set `fsm: true` for **every** app in `state.json` (and every app added in this run). It stays on for later runs without the word. An app that was `done` with `fsm` false gets the "FSM newly enabled" update (section 4).
 
 ## 3. Diagram mode, layout, state machines, humanizer
 
@@ -70,20 +71,20 @@ humanizer-indonesia and the draw.io skill change on their own schedule, and a ne
 
 ## 4. Per-app pipeline and resume
 
-Each app moves through stages, recorded in `state.json → apps.<id>.stage`. **Write `state.json` after every stage change**, so an interrupted run resumes from the right stage.
+Each app moves through stages, recorded in `state.json → apps.<id>.stage`. Change it only with `TOOL stage --repo REPO --app <id> --stage <stage> [--error "<why>"]` (it writes the real time), after every stage change, so an interrupted run resumes from the right stage. Never edit `state.json` by hand or with inline scripts.
 
 ### Fresh docs
 
 | Stage now | Next step | Stage after |
 |---|---|---|
 | `pending` (or `failed` before `app-done`) | app-documenter, mode `app` | `app-done` |
-| `app-done` | `TOOL briefs`, then one **flow-documenter** (mode `flow`) per important flow | `flows-done` |
+| `app-done` | `TOOL briefs`, then one **flow-documenter** (mode `flow`) per brief: a brief is a **group** of flows the app agent found to share most of their code | `flows-done` |
 | `flows-done` | `TOOL assemble` (fragments → guides, facts, app state; renders tables) | `drafted` |
 | `drafted` | goldfish-reviewer | `reviewed` |
 | `reviewed` | doc-fixer, then `TOOL render` | `fixed` |
 | `fixed` | humanizer step (below), then svg-theme, validate | `done` |
 
-**Flow agents.** `TOOL briefs --repo REPO --app-state docs/.docgen/apps/<id>.json` writes one brief per important flow. Start one flow-documenter per brief. A flow agent is finished when its `fragment_dir/state.json` exists; record each finished flow in `state.json → apps.<id>.flows_done` right away. On resume in `app-done`, start agents only for flows not in `flows_done`. A flow agent that fails: record it in `stage_error`, still assemble the others, and report the flow as missing (the validator flags its placeholder as `flow-not-assembled`).
+**Flow agents.** `TOOL briefs --repo REPO --app-state docs/.docgen/apps/<id>.json` writes one brief per flow group (`flows[].group`, set by the app agent; few flows over a shared core make one group, so the core is read once). Start one flow-documenter per brief. A flow is finished when its `fragment_dir/state.json` exists; when an agent returns, record its finished flows with `TOOL flow-done --repo REPO --app <id> --flows a,b`. On resume in `app-done`, run `TOOL briefs … --flows <the flows not in flows_done>`. A flow agent that fails: record it in `stage_error`, still assemble the others, and report the flow as missing (the validator flags its placeholder as `flow-not-assembled`).
 
 **Assemble** stops on nothing: it reports `problems` per flow (a fragment without its anchor, say). Report them; the flow's placeholder stays for the next run.
 
@@ -109,14 +110,14 @@ The upgrade plan's actions map to stages: `regenerate` → update mode with "Tem
 - **Before the first agent** touches an app: `TOOL keep-snapshot --repo REPO --app-state <state> --out docs/.docgen/.work/keep-<id>.json`. People write `<!-- app-docs:keep -->` blocks into the guides (conventions §8).
 - **After every writing step** (each agent, and assemble): `TOOL keep-restore --repo REPO --app-state <state> --before docs/.docgen/.work/keep-<id>.json`. It puts back any keep block an agent dropped. Report restored blocks: an agent that drops them needs its prompt checked.
 - **After assemble**, render once with `--refresh-owners`: `TOOL render --repo REPO --app-state <state> --refresh-owners`. That takes this run's owners snapshot; every other render reuses it, so the owners table doesn't change between runs on its own.
-- **Before validate**: `TOOL stamp --repo REPO --app-state <state>`. It records each section's file contents, so drift still works after a squash merge or rebase.
+- **Before validate**: `TOOL stamp --repo REPO --app-state <state>`. It sets each section's dirty flag from its own files (and the subtitle mark to match), and records each section's file contents, so drift still works after a squash merge or rebase. Agents never set `dirty`.
 
 ### Humanizer step
 
-1. `TOOL humanize-plan --repo REPO --app-state <state> --skill <HUMANIZER_SKILL> [--scope <op: keys>]`. It returns how many paragraphs need work. **0 → skip the agent.**
+1. `TOOL humanize-plan --repo REPO --app-state <state> --skill <HUMANIZER_SKILL> [--scope <op: keys>]`. Scope = the User Guide sections written or changed in this run (all of them on a fresh run). It lists every prose paragraph and every Indonesian table string in scope. **Both counts 0 → skip the agent.**
 2. `TOOL facts-snapshot … --out docs/.docgen/.work/facts-<id>-prehuman.json`.
 3. operator-humanizer with the plan.
-4. `TOOL facts-diff … --before …-prehuman.json --only op --strict`. Any change is a failure: run operator-humanizer **once more** with the `changes` list ("put back exactly these facts"), and diff again. Still failing → record a validator failure `humanizer-fact-changed` and keep the text. Never loop.
+4. `TOOL render --repo REPO --app-state <state>` (the humanizer changed table text in the facts file), then `TOOL facts-diff … --before …-prehuman.json --only op --strict`. It covers the rendered tables too. Any change is a failure: run operator-humanizer **once more** with the `changes` list ("put back exactly these facts"), and diff again. Still failing → record a validator failure `humanizer-fact-changed` and keep the text. Never loop.
 
 ### Fact checks around the fixer
 
@@ -130,9 +131,9 @@ Concurrency: at most **5 agents running at once**, across all apps (several Agen
 
 Validation (no LLM) after svg-theme: `TOOL validate --repo REPO --app-state docs/.docgen/apps/<id>.json`. Failures **don't block writing**. Collect them for the report.
 
-**Token recording.** At the start of the run, set `RUN` to the current time (`date -u +%Y-%m-%dT%H:%M:%SZ`), the same value for the whole run. Every time an agent finishes, its completion carries `total_tokens` and `duration_ms`. Record them right away, because they aren't stored anywhere else:
+**Token recording.** At the start of the run, set `RUN` to the current time (`date -u +%Y-%m-%dT%H:%M:%SZ`), the same value for the whole run. Record an agent only **when its completion notice arrives** (never at launch): the notice carries `total_tokens` and `duration_ms`. That figure is roughly the agent's **context size at the end**, not what it spent, so label it "final context" wherever it's shown. Record it right away:
 `TOOL usage-record --repo REPO --run RUN --app <id> --stage <stage it ran> --agent <agent name> --tokens <total_tokens> --ms <duration_ms>`
-For flow agents, use `--stage flow:<flow-id>`. If the completion doesn't show a token count, leave `--tokens` out. Your own (orchestrator) tokens aren't in it.
+For flow agents, use `--stage flow:<group>`. If the completion doesn't show a token count, leave `--tokens` out. Your own (orchestrator) tokens aren't in it.
 
 Cost control: every writer runs on Sonnet and goldfish-reviewer on Opus, as set in their agent files. Goldfish runs once per app per run; fixes are applied without a second review; the validator is the safety net.
 
@@ -191,7 +192,7 @@ The humanizer runs last, after the goldfish and the fixer, so nothing undoes its
 
 ## 6. Final report
 
-Keep it short. Run `TOOL usage-report --repo REPO --run RUN` first. One block per app, failures first:
+Keep it short. Run `TOOL usage-report --repo REPO --run RUN` (final context per agent) and `TOOL usage-spend --repo REPO --since RUN` (real spend: input, output, cache write and cache read tokens from Claude Code's session transcripts, main session and every subagent) first. If `usage-spend` finds no transcripts, say so and show only final context. One block per app, failures first:
 
 ```
 payment-api  ✅ done   docs/payment-api/  (single, 23 flows, 9 full)
@@ -201,7 +202,7 @@ payment-api  ✅ done   docs/payment-api/  (single, 23 flows, 9 full)
   Fix changed facts: dev:app-flow/refund lost `30s`, added `60s`
   Guides disagree: app-flow/create-payment: User Guide says `PAYMENT_TIMEOUT_MS`, Dev Guide doesn't
   Code links: commit a1b2c3d not pushed (links 404 until pushed)
-  Tokens: 412k (app 95k · flows 9 × 18k · review 70k · fix 20k · humanize 25k)
+  Final context: app 95k · flows 2 × 60k · review 70k · fix 20k · humanize 25k
   Diagrams: 9 flows × (flowchart + sequence), 6 sub-flows, structure, startup, data-flow · layout graphviz · theme adaptive
   State machines: payment-status (5 states, 9 transitions, 1 inferred name), item-state
   Marks: 3 unverified · 1 contradiction · 2 security findings
@@ -209,14 +210,14 @@ payment-api  ✅ done   docs/payment-api/  (single, 23 flows, 9 full)
 order-web    ❌ failed at drafted: <stage_error>
 ```
 
-After the app blocks, one line with the run's total tokens and, when `usage-report` has a `previous` run, the total of that run and its plugin version ("Tokens this run: 1.2M; previous run (2.9.1): 1.9M"). These are only the subagents' tokens.
+After the app blocks, the run's real spend from `usage-spend` in one line: output tokens, cache reads, cache writes and uncached input, per model ("Spend: Sonnet 310k out · 41M cache read · 2.1M cache write · 180k in; Opus 22k out · 3.9M cache read …"). Output and cache reads are what drive cost and usage limits. Compare runs on these, never on final context, which grows with the number of agents.
 
 Remind the user that nothing was committed. They review the diff and commit.
 
 ## 7. After the report
 
-If at least one app changed in this run, ask with AskUserQuestion:
+If at least one app changed in this run:
 
-**Sync to Docmost now?** "Yes, sync now" / "No, I'll sync later". The user decides when to sync, never the plugin. On yes, read `<SHARED>/../skills/sync/SKILL.md` and follow it, with the root URL from `state.json` (it asks for one when there's none).
+Don't sync in this conversation: every browser call would re-send this run's whole history. End with one line: "To publish to Docmost, run `/app-docs:sync` in a **new** conversation." The user decides when.
 
 In a scheduled run, ask nothing: write the report and stop.

@@ -10,6 +10,7 @@ Why: a table written twice by hand (once per guide) costs twice the output and d
 - **Code references** are plain `"path:start-end"` strings. The renderer turns them into permalinks pinned to the section's commit. Never write URLs here.
 - **Names** (keys, tables, log messages, metrics) are written exactly as in the code, without backticks; the renderer adds them.
 - **On update, change only entries whose facts changed.** An unchanged entry keeps its `id` text, so nothing is translated twice.
+- The `id` text is polished by the humanizer at the end of the run, through `docs_tool.py facts-set`, like the User Guide's prose. Write it plainly; don't try to sound polished.
 - Empty list = "none found". The renderer prints `_None._` / `_Tidak ada._`, or the unknown placeholder where conventions §8 asks for one (alerts).
 - Never edit a rendered block in the markdown. The validator compares every block with the facts file (`render-stale`).
 

@@ -25,7 +25,7 @@ Every path ends at a **success terminal** or an **error terminal**, or visibly r
 
 ## 5. Sequence diagrams
 
-A sequence diagram shows **who calls whom, in order**, for the same flow. One per important flow. It should read like a story in pictures, so the script makes it rich. You decide what's in it:
+A sequence diagram shows **who calls whom, in order**, for the same flow. One per important flow **that calls another system** (`external: true`, diagrams §1); a flow that only uses its own database gets none, and no story. It should read like a story in pictures, so the script makes it rich. You decide what's in it:
 
 - **Participants** left to right in call order: caller, this app (split into its main layers when it helps: handler, service, repository), other internal apps, datastores, queues, external systems. Give each its real `kind`: the header is drawn as a person (`client`), a cylinder (`db`), a folder (`file`), a bucket (`object`), a hexagon (`cache`), a cloud (`external`), or a box (`step`, `internal`).
 - **Phases:** group the messages into 3–6 phases that name what is happening (`Receive & validate`, `Call partner`, `Map response`, `Write logs`, `Respond`). Each phase is a colored band with its name on the left.

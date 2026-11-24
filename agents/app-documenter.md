@@ -31,15 +31,19 @@ Large repos don't fit in context, so read deliberately:
 - Deployment and ops facts: Dockerfile, compose, Helm/k8s, `.gitlab-ci.yml`, logging setup, health endpoints, metrics registrations, Prometheus rule files. Not in the repo → the conventions §8 placeholder. Don't invent production facts.
 - READMEs, old docs and comments in this app: where they disagree with the code, document the code and add a Contradiction mark (Dev Guide only).
 
-### 2. Decide importance, split, shared sub-flows
+### 2. Decide importance, split, groups, shared sub-flows
 
-Rank flows by conventions §9 and mark `important`. Apply conventions §10 unless your prompt forces split. When two or more important flows run the same steps (diagrams §4, "identical logic drawn twice"), give the shared sub-flow to **one** flow: `subflows_owned: ["write-row"]` on it, `subflows_used: ["write-row"]` on the others. Their agents run in parallel, so each shared diagram needs exactly one owner.
+**Write early.** As soon as the flows are known, write the facts file with what you have and both guides' outline (anchors, headings, subtitles, placeholders), then fill sections one by one. A run that is cut off then still leaves usable work, and the next run resumes from it.
+
+Rank flows by conventions §9 and mark `important`. For each important flow set `external`: true when it calls another system (another service or app, a third-party API, a broker; its own database doesn't count; diagrams §1). Only those get a sequence diagram and story.
+
+**Groups.** Flow agents run per group, and each reads the code its flows touch. Put important flows that share most of their code (the same handler layer, services, clients, repositories) in one group: `group: "core"`. Give a flow its own group only when it touches largely different code. With 6 or fewer important flows over one shared core, use a single group. Apply conventions §10 unless your prompt forces split. When two or more important flows run the same steps (diagrams §4, "identical logic drawn twice"), give the shared sub-flow to **one** flow: `subflows_owned: ["write-row"]` on it, `subflows_used: ["write-row"]` on the others. Their agents run in parallel, so each shared diagram needs exactly one owner.
 
 ### 3. Write
 
 - **Both guides, app-level sections only**, from the templates: everything except the important flows' sections. Where the template shows `<!-- docgen:flow id="…" -->`, write one placeholder line per important flow, in index order. In split mode, write the section files (conventions §2) and leave `05-app-flow/` and `03-app-flow/` to the assembler, except their `00-index.md`.
 - **The facts file** `docs/.docgen/facts/<id>.json` (facts-schema.md): config, `config_loaded_at`, every flow's `purpose` and `check`, storage, app-level logs (startup, cron), metrics, alerts, common errors, glossary, gotchas, tech debt. Every table and list in the templates is a `docgen:render` block: write the facts, leave the markers empty. Flow agents add their own logs, glossary terms and flow details later.
-- Anchors and subtitles per conventions §3–4. Code references as permalinks (§5); check line numbers against the file, and that the function you name is inside the cited lines.
+- Anchors and subtitles per conventions §3–4. Never write ` + uncommitted changes` or `dirty`: a script sets both per section. Code references as permalinks (§5); check line numbers against the file, and that the function you name is inside the cited lines.
 - Unclear behavior (dead branches, flags with unknown purpose, dynamic dispatch): state what is known and add an Unverified mark in the Dev Guide, with the author from `TOOL author --repo <repo> <file> <start> <end>`. Leave it out of the User Guide.
 - Secrets: keys and placeholders only. Hardcoded secrets become security findings, value redacted (conventions §7).
 - **Diagrams:** structure, startup, data-flow, and with `FSM: on` the state diagrams (diagrams-app.md). draw.io mode: write the specs to `docs/.docgen/.work/specs/<id>/`, then run `TOOL diagrams --repo <repo> --app <id> --only structure,startup,data-flow` (add `<machine-id>.state` for each machine) and look only at the PNGs of flagged diagrams (diagrams §2).
@@ -50,7 +54,7 @@ Rank flows by conventions §9 and mark `important`. Apply conventions §10 unles
 
 ### 4. App state
 
-`docs/.docgen/apps/<id>.json` per state-schema.md, with `template_version` set to the current one (the number in the title of `conventions.md`): every flow (verbatim `label`, `entry`, `important`, `subflows_owned` / `subflows_used`), and an entry for every section **you** wrote, with meta, generous `files`, and `diagram`. Flow sections are recorded by the assembler.
+`docs/.docgen/apps/<id>.json` per state-schema.md, with `template_version` set to the current one (the number in the title of `conventions.md`): every flow (verbatim `label`, `entry`, `important`, `external`, `group`, `subflows_owned` / `subflows_used`), and an entry for every section **you** wrote, with meta, generous `files`, and `diagram`. Flow sections are recorded by the assembler.
 
 ### 5. Self-check
 

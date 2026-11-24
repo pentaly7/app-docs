@@ -183,20 +183,12 @@ class ReviewFixes(unittest.TestCase):
         out = self.tool("facts-diff", "--app-state", self.state, "--before", snap, "--cells")
         self.assertTrue(any("disimpan" in c.get("missing_words", []) for c in out["changes"]), out)
 
-    def test_humanize_plan_ignores_metrik_length_rows(self):
+    def test_humanize_plan_reports_metrik_once_per_guide(self):
         skill = self.repo.path / "fake-skill"
         (skill / "scripts").mkdir(parents=True)
-        (skill / "scripts/metrik.py").write_text(
-            "import sys\nprint('Rata-rata panjang kalimat 12.3 PERIKSA')\nprint('Sebaran panjang kalimat 0.9 PERIKSA')\n"
-            "t=open(sys.argv[1]).read()\nprint('Konektor kaku: 1 PERIKSA' if 'Adapun' in t else 'Konektor kaku: 0 OK')\n")
-        guide = self.repo.path / "docs/pay/operator-guide.md"
-        clean = ("Data voucher disimpan dalam satu file JSON. File itu ditulis ulang setiap kali status berubah. "
-                 "Penulisan memakai file sementara lalu rename, sehingga file tidak pernah setengah jadi.")
-        guide.write_text(guide.read_text().replace("Selain itu, aplikasi ini merupakan layanan pembayaran.", clean))
-        out = self.tool("humanize-plan", "--app-state", self.state, "--skill", str(skill), "--min-words", "10")
-        plan = json.loads((self.repo.path / out["plan"]).read_text())
-        self.assertFalse(any(p["text"].startswith("Data voucher") for p in plan["paragraphs"]), "clean paragraph not flagged")
-        self.assertTrue(plan["guide_notes"], "length rows reported once per guide")
+        (skill / "scripts/metrik.py").write_text("print('Sebaran panjang kalimat 0.9 PERIKSA')\nprint('Konektor kaku: 0 OK')\n")
+        out = self.tool("humanize-plan", "--app-state", self.state, "--skill", str(skill))
+        self.assertEqual(out["guide_notes"], ["operator-guide.md: Sebaran panjang kalimat 0.9 PERIKSA"])
 
 
 if __name__ == "__main__":

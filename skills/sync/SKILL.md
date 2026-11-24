@@ -11,6 +11,8 @@ Arguments: `$ARGUMENTS`
 
 Docmost community edition has no API keys or MCP here, so this drives the Docmost web UI in the user's Chrome. Sync is **one-way**: the markdown in GitLab is the source of truth.
 
+Run it in its **own conversation**, not right after a generate or update: every browser call re-sends the conversation so far. If this conversation already holds a generate or update run, say so and suggest starting a new one; go on only if the user wants to.
+
 What a sync keeps and what it replaces:
 - **Kept:** each page's URL, its place in the tree, its page history, and page-level comments.
 - **Replaced:** the whole body. Edits made in Docmost are overwritten. **Inline comments** (comments attached to a piece of text) are attached to text that the sync replaces, so they are lost or end up detached. Tell the user this before the first sync: notes belong in their own Docmost pages, or in a merge request on the markdown.
@@ -29,7 +31,9 @@ What a sync keeps and what it replaces:
    - `prepared_file`: the page body as markdown, diagrams replaced by `[[diagram:<name>]]` placeholders
    - `prepare_js`: sets the title and selects the whole body, ready for a paste
    - `check_js`: reports what the body holds now (headings, images uploaded, placeholders left, raw markdown showing)
-   - `images[]`: per diagram `name`, `path`, `place_js` (selects and deletes its placeholder, leaving the cursor there) and `image_js` (fallback only)
+   - `images[]`: the diagrams to **upload** on this page, each with `name`, `path`, `place_js` (selects and deletes its placeholder, leaving the cursor there) and `image_js` (fallback only)
+   - `images_linked`: diagrams already uploaded on another page; the prepared text links to them, so they come in with the paste and cost no calls
+   - `images_js`: lists the image addresses in the page, for recording uploads
    - `paste_text_js`: sets title and body by script, text only (fallback when the clipboard paste doesn't work; images still go by file upload)
    - `paste_js`: the same with every diagram as base64 (last resort: the diagrams pass through the conversation)
    - `orphans[]`: pages synced before whose doc no longer exists
@@ -45,6 +49,10 @@ If a `chrome-browser` skill is listed, load it first. Load the browser tools in 
 If the tools don't exist or can't reach Chrome, say that sync needs Claude Code running locally with Chrome and the Claude in Chrome extension connected (`claude --chrome`, or the desktop app), and stop.
 
 Call `tabs_context_mcp`, open a **new** tab, and navigate to `root_url`. If Docmost shows a login page, ask the user to log in in that tab and tell you when done.
+
+**Always name the tab.** Pass that tab's `tabId` on every browser call. After every `navigate` or reload, call `tabs_context_mcp` again and use the `tabId` it reports before the next action: "Couldn't determine which page this action targets" comes from calls made right after a page change, and a refused call in the middle of placing an image leaves the editor half-done. When a call is refused anyway, run `check_js` before doing anything else, so you repair from the page's real state.
+
+If a frame from another browser extension blocks scripts on Docmost, ask the user to turn that extension off for the Docmost address (or sync from a Chrome profile without it) rather than working around it.
 
 Avoid anything that opens a browser dialog (delete, "leave page?" confirmations). Dialogs block the extension.
 
@@ -63,6 +71,7 @@ Page text goes through the **OS clipboard**, not through you: `TOOL clip <prepar
    Poll `check_js` until `images_uploaded` grew by one (up to 15 tries).
 5. Container pages (`container: true`): run `prepare_js`, then press `Delete` to clear whatever body the page had (a guide that was split keeps its old text there otherwise), and check the title. A split guide with a top-level `00-index.md` isn't a container: its index is the page body and is pasted like any page.
 6. **Verify after reload:** navigate to the page URL again and run `check_js` until it's `ok` (up to 10 tries). This proves Docmost saved it, not just displayed it.
+7. **Record the uploads**, if `images` wasn't empty: run `images_js` and pass its output, as is, to `TOOL sync-record --repo REPO --key <key> --image-urls '<output>'`. Every later page that shows the same diagram links to this upload instead of uploading it again, and later syncs skip unchanged diagrams. Re-run `TOOL sync-plan` before the next page, so it picks up the new links (pages already planned keep working either way).
 
 `TOOL clip` fails, or the keystroke doesn't paste (some macOS setups ignore a synthetic Cmd+V) → use `paste_text_js` for the text, and keep uploading images with the recorded image method. Tell the user once that page text now passes through the conversation (slower, costs more). `paste_js` only if no image method works at all.
 
@@ -70,9 +79,10 @@ Page text goes through the **OS clipboard**, not through you: `TOOL clip <prepar
 
 Prove the method on the **first content page that has a diagram** before syncing the rest:
 
-1. Create or open that page (section 5, step 1) and write it as in section 3. For images, try `file-upload` first, then `clipboard-file`, then `paste-script`, and keep the first one where `images_uploaded` grows and a screenshot shows the diagram. Record it: `TOOL sync-record --repo REPO --method clipboard-markdown --image-method <method>` (`--method paste-markdown` if the text needed `paste_js`).
+1. Create or open that page (section 5, step 1) and write it as in section 3. For images, try `clipboard-file` first, then `file-upload` (Docmost's image item may open the operating system's file picker, which the extension can't operate), then `paste-script`, and keep the first one where `images_uploaded` grows and a screenshot shows the diagram. Record it: `TOOL sync-record --repo REPO --method clipboard-markdown --image-method <method>` (`--method paste-markdown` if the text needed `paste_js`).
 2. Also check with a screenshot that tables and Mermaid blocks render.
-3. Nothing works for the text, or no image method works → stop. Show the user the screenshot and what failed. Don't improvise a method that might change URLs or lose content. Decide with the user.
+3. **Image reuse:** on the first page whose plan has `images_linked` above 0, take a screenshot after the reload check. The linked diagrams show → `TOOL sync-record --repo REPO --image-reuse ok`. They show as broken images → `TOOL sync-record --repo REPO --image-reuse off`, run `TOOL sync-plan` again (those pages now upload their own copies) and redo that page.
+4. Nothing works for the text, or no image method works → stop. Show the user the screenshot and what failed. Don't improvise a method that might change URLs or lose content. Decide with the user.
 
 **Recalibrate on failure:** when a page fails with a recorded method that worked before, Docmost's UI probably changed. Treat both methods as unknown, calibrate again on that page (which records the new ones), and retry it once. Still failing → stop the sync and report; don't push on through every page with a broken method.
 

@@ -17,7 +17,7 @@ This is the main command. It works out what each app needs, so running it again 
 | App stage not `done` | Resume from its stage |
 | App `done`, but its code changed since its sections' commits | Update the stale sections |
 | New app found in the repo | Fresh docs for it |
-| The plugin's template, diagram, story or humanizer rules are newer than the repo's | Ask first, with a token estimate (pipeline §2 step 6). Yes → extend, regenerate, redraw, restory or re-humanize as the plan says. No → only real drift is fixed |
+| The plugin's template, diagram, story or humanizer rules are newer than the repo's | Ask first, with a token estimate (pipeline §2 step 7). Yes → extend, regenerate, redraw, restory or re-humanize as the plan says. No → only real drift is fixed |
 | Everything up to date | Say so and stop |
 
 ## Steps
@@ -44,7 +44,7 @@ This is the main command. It works out what each app needs, so running it again 
 
 5. Run the per-app pipeline (pipeline §4–5): the app-level agent, then one flow agent per important flow, assembled by script. At most 5 agents at a time across all apps, `state.json` written after every stage change.
 
-6. Final report (pipeline §6), then the sync and CI questions (pipeline §7).
+6. Final report (pipeline §6), ending with the line about syncing in a new conversation (pipeline §7).
 
 ## Notes
 

@@ -75,7 +75,7 @@ Write JSON to the path in your prompt:
 - `severity`: `high` (a reader would act wrongly), `medium` (a reader would be slowed or confused), `low` (minor gap).
 - `lens`: `accuracy` | `audience`. `doc`: `dev` | `op` | `both`.
 - `target`: `doc` when the markdown prose must change, `facts` when the fix is in the facts file (any rendered table or list); then name the facts path in `section`, e.g. `facts:flow_details.create-payment.errors[1]`.
-- `evidence`: the `path:start-end` that proves it. The fixer reads only these lines unless you add `"wide": true` (a missing branch or flow that needs more of the code).
+- `evidence`: the `path:start-end` that proves it, inside the repo or in installed library source (Go: `go env GOMODCACHE`; Java: `~/.m2/repository`; Node: `node_modules`; PHP: `vendor`). A claim you can't check anywhere is a finding of its own ("needs an Unverified mark"), not a correction. The fixer reads only these lines unless you add `"wide": true` (a missing branch or flow that needs more of the code).
 - Make the fix concrete enough that someone else can apply it without re-investigating.
 
 Return one line: the number of findings by severity.
