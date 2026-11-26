@@ -14,6 +14,7 @@ Every agent and script in this plugin follows this file. The validator (`docs_to
 9. Flows: important vs. listed
 10. When to split a doc
 11. Owners and escalation
+12. Links to other apps
 
 ---
 
@@ -207,3 +208,13 @@ The User Guide's `owners` section tells an operator who to contact. Take it from
 - **Manual override:** `manual.owners` and `manual.escalation` in the facts file win over both. Use them when the escalation target isn't in CODEOWNERS.
 - The table is rendered from a snapshot taken once per run, so it doesn't change between runs just because time passed.
 - Write names and GitLab handles exactly as returned. Say where they came from ("dari CODEOWNERS", "dari riwayat commit 6 bulan terakhir"), so a reader knows how much to trust it.
+
+## 12. Links to other apps
+
+When a flow calls another app, link to that app's guide of the same kind: Dev Guide to Dev Guide, User Guide to User Guide. Take the targets from the prompt's "Other apps" list; never guess a path.
+
+- **Same repo:** a relative link from this file to the other app's guide file (`../order-worker/operator-guide.md`), so it works in GitLab and in a local checkout.
+- **Another repo in the workspace:** the GitLab link the prompt gives (`https://gitlab…/team/wallet/-/blob/main/docs/wallet/operator-guide.md`). Never a relative path that leaves the repo: it breaks in GitLab.
+- **Not documented yet:** the app's name in backticks, no link.
+
+Write the link in the markdown and nothing else. Sync turns a User Guide link into the target's Docmost page, or into plain text until that page exists; the markdown keeps its GitLab link.

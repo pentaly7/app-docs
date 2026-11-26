@@ -37,9 +37,8 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
     "list_numbers": "native",
     "image_method": "clipboard-file",
     "pages": {
-      "payment-api": { "url": "https://docmost.example.com/s/engineering/p/payment-api-x1y2" },
-      "payment-api/op": {
-        "url": "https://…",
+      "payment-api": {
+        "url": "https://docmost.example.com/s/engineering/p/payment-api-x1y2",
         "content_hash": "sha256:…",
         "synced_sha": "a1b2c3d4…",
         "synced_at": "2026-11-15T08:00:00+07:00"
@@ -50,19 +49,20 @@ Write JSON with 2-space indent and sorted keys, so git diffs stay small.
 ```
 
 - `kind`: `backend` | `frontend` | `worker` | `cli` | `library`.
-- `stage` (per-app pipeline, used for resume): `pending` → `app-done` → `flows-done` → `drafted` → `reviewed` → `fixed` → `done`; also `redraw`, `restory`, `extend`, `facts` (pipeline §4), and `failed` with a `stage_error` string.
+- `stage`: `pending` (never documented), `working`, `failed` (with a `stage_error` string) or `done`. Only `done` apps are synced and get READMEs.
+- `job`, `step`, `jobs`, `job_started`, `flows_todo`, `flows_done`: written by `pipeline.py` only, while an app has work (pipeline §5). They're what lets a cut-off run resume at the same step; they're removed when the app is `done`. 2.x stages (`app-done`, `drafted`, …) aren't continued: the next run asks to start those apps fresh.
 - `flows_done`: important flows whose flow agent finished in the current pass (cleared when the app reaches `done`), so a resumed run starts only the missing ones.
 - `diagram_version`: the diagram rules the diagrams were last drawn with. When it differs from the plugin's, the next run redraws the diagrams only (text untouched).
 - `story_version`: the sequence-story rules the stories were last written with. When it differs from the plugin's, the next run re-reads the code and rewrites only the stories.
 - `apps.<id>.fsm`: state machine detection is on for this app. Set by running with `fsm`, kept for every later run.
-- `docmost.diagram_theme`: `adaptive` (light and dark palette, default) or `light` (always light), decided by the first sync's calibration.
+- `docmost.diagram_theme`: `adaptive` (default) or `light`, decided by the first sync's calibration. It only changes the copies sync uploads: the `.drawio.svg` files in `docs/` stay adaptive, because GitLab shows them too.
 - `humanizer_version`: the humanizer rules the operator guides were last polished with. When it differs from the plugin's, the next run re-humanizes only.
 - `split_all`: true when the repo has more than 10 apps (conventions §10).
-- `docmost.pages` keys follow the doc's structure, not its file paths, so splitting a doc or renaming a file keeps the same Docmost page (and its URL, history and comments):
-  - `<app-id>`: the app's container page
-  - `<app-id>/dev`, `<app-id>/op`: the guide (single mode), or its container page (split mode)
-  - `<app-id>/dev/<first-anchor-id>`, `<app-id>/op/<first-anchor-id>`: one split-mode file, keyed by the first section anchor in it
-  `docs_tool.py migrate` converts keys from plugin versions before 2.9 (file paths). `docmost` stays `{}` until the first sync.
+- `docmost.pages` holds **User Guide pages only**; the Dev Guide is read in GitLab. Keys follow the doc's structure, not its file paths, so splitting a doc or renaming a file keeps the same Docmost page (and its URL, history and comments):
+  - `<app-id>`: the app's page. Its body is the User Guide (single mode) or the User Guide's top `00-index.md` (split mode; empty without one).
+  - `<app-id>/op/<first-anchor-id>`: one split-mode file, keyed by the first section anchor in it, under the app page.
+  `docs_tool.py migrate` converts keys from plugin versions before 2.9 (file paths) and drops `<app-id>/dev…` keys from 2.x without touching Docmost. `docmost` stays `{}` until the first sync.
+- Inside a workspace, `root_url`, `method`, `image_method`, `diagram_theme`, `list_numbers` and `image_reuse` are also kept in the workspace file (`pipeline.md` §8), and the workspace's values win: one calibration serves every repo synced to that Docmost. Each repo keeps its own copy, so a sync from that repo alone still works.
 - `docmost.list_numbers`: `native` or `bold` (calibration found Docmost renumbers lists, so numbers are written as `**5.**`).
 - `docmost.image_method`: how diagrams got into pages last time: `clipboard-file`, `file-upload` or `paste-script` (sync skill).
 - `skills`: the version of each outside skill used by the last run (`docs_tool.py skill-pin`), so a changed humanizer or draw.io skill is reported.

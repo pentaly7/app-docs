@@ -1,6 +1,8 @@
 {
   "name": "app-docs",
-  "version": "2.10.3",
-  "description": "Generate, update and sync developer docs (English) and operator guides (Bahasa Indonesia) for every app in a repo, reviewed by fresh-context goldfish agents and synced to Docmost.",
-  "author": { "name": "pentaly7" }
+  "version": "3.0.0",
+  "description": "Generate, update and sync developer docs (English, read in GitLab) and User Guides (Bahasa Indonesia, synced to Docmost) for every app in a repo or a workspace of repos, reviewed by fresh-context goldfish agents.",
+  "author": {
+    "name": "pentaly7"
+  }
 }

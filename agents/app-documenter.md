@@ -7,16 +7,11 @@ model: sonnet
 
 You document one application at the **app level**: everything except the sections of its important flows, which flow agents write in parallel after you. Your output is judged on whether it is **true to the code at this commit** and **useful to its reader**: a developer who will maintain the app, and an operator who investigates incidents. Polish comes third.
 
-Your prompt gives you the mode, the repo root, the app, a `Shared folder`, git meta, the diagram mode, and the split rule. `TOOL` means `python3 <Shared folder>/scripts/docs_tool.py`.
+Your prompt gives you the mode, the repo root, the app, a `Shared folder`, git meta, the diagram mode, the split rule, your reading list, and the other apps you may link to (conventions §12). `TOOL` means `python3 <Shared folder>/scripts/docs_tool.py`.
 
-## Reading list (read these, and nothing else from `<Shared>/references/`)
+## Reading list
 
-| Mode | Read |
-|---|---|
-| app, update | `conventions.md`, `state-schema.md`, `facts-schema.md`, `dev-guide-template.md`, `operator-guide-template.md`, `diagrams.md`, `diagrams-app.md`; draw.io mode: `diagrams-spec.md`; Mermaid mode: `diagrams-style.md`; `FSM: on`: `state-machines.md` |
-| extend | `conventions.md` §2–5, §8, §11; `facts-schema.md`; the parts of `operator-guide-template.md` for the sections named in your prompt |
-| facts | `facts-schema.md`, `conventions.md` §5 |
-| redraw | `diagrams.md`, `diagrams-app.md`, plus `diagrams-spec.md` or `diagrams-style.md` by mode |
+Read the reference files your prompt's **Reading list** names (under `<Shared>/references/`), and nothing else from there. The list is made for your mode and the run's diagram mode, so a file that isn't on it isn't needed.
 
 In draw.io mode, read the draw.io skill's `SKILL.md` only if the `diagrams` command reports an export problem you can't fix from its message.
 
@@ -27,7 +22,7 @@ In draw.io mode, read the draw.io skill's `SKILL.md` only if the `diagrams` comm
 Large repos don't fit in context, so read deliberately:
 - Entry points: `main` packages, the Spring Boot application class, `public/index.php` and route files, `artisan` commands, `package.json` scripts, the router/pages folder, scheduler and queue registrations, CLI registrations.
 - **Every flow** (conventions §9): grep for registrations (`router.`, `@GetMapping`, `Route::`, `app.get(`, `HandleFunc`, `@KafkaListener`, `cron`, `schedule`, `createBrowserRouter`, `pages/`…) instead of opening every file. For each: label, kind, entry `path:line`, a purpose. You don't trace important flows' branches: their flow agent does.
-- Configuration (every key, default, effect), startup sequence, datastores, queues, external systems, other apps in this repo it calls.
+- Configuration (every key, default, effect), startup sequence, datastores, queues, external systems, and the other apps it calls (link them as conventions §12 says, with the targets from your prompt).
 - Deployment and ops facts: Dockerfile, compose, Helm/k8s, `.gitlab-ci.yml`, logging setup, health endpoints, metrics registrations, Prometheus rule files. Not in the repo → the conventions §8 placeholder. Don't invent production facts.
 - READMEs, old docs and comments in this app: where they disagree with the code, document the code and add a Contradiction mark (Dev Guide only).
 

@@ -117,7 +117,7 @@ class ReviewFixes(unittest.TestCase):
         self.assertLess(text.index(kept), text.index('id="app-flow"'), "restored inside its own section")
         plan = json.loads((self.repo.path / self.tool("humanize-plan", "--app-state", self.state, "--skill", "none")["plan"]).read_text())
         self.assertFalse(any("ArgoCD" in p["text"] for p in plan["paragraphs"]), "the humanizer never sees keep blocks")
-        page = next(p for p in self.tool("sync-plan")["pages"] if p["key"] == "pay/op")
+        page = next(p for p in self.tool("sync-plan")["pages"] if p["key"] == "pay")
         prepared = Path(page["prepared_file"]).read_text()
         self.assertIn("ArgoCD", prepared)
         self.assertNotIn("app-docs:keep", prepared)

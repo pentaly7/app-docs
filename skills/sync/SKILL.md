@@ -1,127 +1,70 @@
 ---
 name: sync
-description: One-way sync of the app docs in /docs to Docmost (community edition, no API) by driving the user's logged-in Chrome through Claude in Chrome. Creates the Space › App › User Guide / Dev Guide page tree the first time, then updates the same pages in place on later runs, so URLs stay stable. Asks whether to archive or delete pages that no longer have a doc. Pass the Docmost space or parent-page URL on the first run; it's saved for later runs.
+description: One-way sync of the User Guides in /docs to Docmost (community edition, no API) through the user's logged-in Chrome, for the current repo or every repo of a workspace folder. Each app's page is its User Guide; split guides hang their pages under it. The Dev Guide stays in GitLab. Pages are created the first time and updated in place later, so URLs stay stable. One sync agent per app, one at a time, callees first; links between services become Docmost links once their target page exists. Pass the Docmost space or parent-page URL on the first run; it's saved for later runs.
 argument-hint: "[docmost-url]"
 disable-model-invocation: true
+model: sonnet
 ---
 
-# Sync docs to Docmost
+# Sync User Guides to Docmost
 
 Arguments: `$ARGUMENTS`
 
-Docmost community edition has no API keys or MCP here, so this drives the Docmost web UI in the user's Chrome. Sync is **one-way**: the markdown in GitLab is the source of truth.
+Docmost community edition has no API keys or MCP here, so sync drives the Docmost web UI in the user's Chrome. Sync is **one-way**: the markdown in GitLab is the source of truth. Only User Guides are synced; developers read the Dev Guide in GitLab.
 
-Run it in its **own conversation**, not right after a generate or update: every browser call re-sends the conversation so far. If this conversation already holds a generate or update run, say so and suggest starting a new one; go on only if the user wants to.
+Run it in its **own conversation**, not right after a generate or update. If this conversation already holds a generate or update run, say so and suggest a new one; go on only if the user wants to.
 
-What a sync keeps and what it replaces:
-- **Kept:** each page's URL, its place in the tree, its page history, and page-level comments.
-- **Replaced:** the whole body. Edits made in Docmost are overwritten. **Inline comments** (comments attached to a piece of text) are attached to text that the sync replaces, so they are lost or end up detached. Tell the user this before the first sync: notes belong in their own Docmost pages, or in a merge request on the markdown.
-- Nothing is filtered or checked here: what is in the markdown in GitLab is what gets synced, validator failures included. Look at the last run's validator failures before you sync.
-- `<!-- app-docs:keep -->` markers are removed; the text inside them is synced like any other text.
+Each app is synced by its own `docmost-syncer` agent, so the browser calls of one app never weigh on the next. They run **one at a time**: page text goes through the one OS clipboard and a real paste into the focused tab.
 
-`TOOL` = `python3 <this skill's base directory>/../../shared/scripts/docs_tool.py`. `REPO` = `git rev-parse --show-toplevel`.
+`PIPE` = `python3 <this skill's base directory>/../../shared/scripts/pipeline.py`. `TOOL` = `python3 <this skill's base directory>/../../shared/scripts/docs_tool.py`. `SHARED` = `<this skill's base directory>/../../shared`, as an absolute path.
 
 ## 1. Plan
 
-1. `docs/.docgen/state.json` missing → tell the user to run `/app-docs:generate` first, and stop.
-2. URL: if the arguments contain a URL, save it with `TOOL sync-record --repo REPO --root-url <url>`. If none was given and state has no `docmost.root_url`, ask for the Docmost space (or parent page) URL, and stop until they answer.
-3. Run `TOOL migrate --repo REPO` (it also converts page keys from older versions, so existing pages are found again), then `TOOL sync-plan --repo REPO`. It lists every page in parent-before-child order, with:
-   - `key`, `parent` (a key, or null for directly under the root URL), `title`, `existing_url`, `changed`, `content_hash` (covers the title too, so a renamed page counts as changed)
-   - `container: true` for pages with no body of their own (the app page; "User Guide"/"Dev Guide" in split mode)
-   - `prepared_file`: the page body as markdown, diagrams replaced by `[[diagram:<name>]]` placeholders
-   - `prepare_js`: sets the title and selects the whole body, ready for a paste
-   - `check_js`: reports what the body holds now (headings, images uploaded, placeholders left, raw markdown showing)
-   - `images[]`: the diagrams to **upload** on this page, each with `name`, `path`, `place_js` (selects and deletes its placeholder, leaving the cursor there) and `image_js` (fallback only)
-   - `images_linked`: diagrams already uploaded on another page; the prepared text links to them, so they come in with the paste and cost no calls
-   - `images_js`: lists the image addresses in the page, for recording uploads
-   - `paste_text_js`: sets title and body by script, text only (fallback when the clipboard paste doesn't work; images still go by file upload)
-   - `paste_js`: the same with every diagram as base64 (last resort: the diagrams pass through the conversation)
-   - `orphans[]`: pages synced before whose doc no longer exists
-   Titles: only the app's own page carries the app name. Use `title` exactly as given. Only apps at stage `done` are included.
-   An `error` about two files mapping to the same page → stop and tell the user: two doc files carry the same first section (validate reports `anchor-duplicate`). Syncing would overwrite one page with the other's text.
-4. `to_sync` is 0 and `orphans` is empty → say "Docmost is up to date" and stop. Otherwise say how many pages will be created or updated, and that Chrome must stay open and logged in to Docmost.
+1. `PIPE targets` from the folder the user is in. It lists the repos (callees first in a workspace) and, per app, the pages to create or update, links waiting for their target, orphans, and whether Docmost is calibrated. No page text: keep it that way.
+   - A repo with `skip` → mention it. With `error` (two files map to the same page) → tell the user to fix that repo's docs first (validate reports `anchor-duplicate`): syncing would overwrite one page with the other's text. `not_done` apps aren't synced; mention them.
+2. Root URL: a URL in the arguments → save it with `TOOL sync-record --repo <first repo> --root-url <url>` (in a workspace it's saved for every repo). No URL in the arguments and `root_url` is null → ask for the Docmost space or parent-page URL and stop until they answer.
+3. `to_sync` is 0 and there are no orphans → "Docmost is up to date", and stop. Otherwise say how many pages will be created or updated, in how many apps, and that Chrome must stay open and logged in to Docmost.
+4. **First sync only:** tell the user once that each sync replaces whole page bodies: edits made in Docmost are overwritten, and inline comments (attached to text) are lost or detached. Notes belong in their own Docmost pages, or in a merge request on the markdown. `<!-- app-docs:keep -->` text is synced like any other text.
 
-## 2. Open Chrome
+## 2. Check the login, once
 
-If a `chrome-browser` skill is listed, load it first. Load the browser tools in **one** ToolSearch call:
-`select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__find,mcp__claude-in-chrome__javascript_tool,mcp__claude-in-chrome__get_page_text,mcp__claude-in-chrome__file_upload`
+Load the `chrome-browser` skill if it's listed, then the browser tools in one ToolSearch call (`tabs_context_mcp`, `tabs_create_mcp`, `navigate`, `get_page_text`, `tabs_close_mcp`). No tools, or they can't reach Chrome → say that sync needs Claude Code running locally with Chrome and the Claude in Chrome extension connected (`claude --chrome`, or the desktop app), and stop.
 
-If the tools don't exist or can't reach Chrome, say that sync needs Claude Code running locally with Chrome and the Claude in Chrome extension connected (`claude --chrome`, or the desktop app), and stop.
+Open a new tab on the root URL. A login page → ask the user to log in in that tab and say when done. Then close the tab.
 
-Call `tabs_context_mcp`, open a **new** tab, and navigate to `root_url`. If Docmost shows a login page, ask the user to log in in that tab and tell you when done.
+## 3. Sync each app
 
-**Always name the tab.** Pass that tab's `tabId` on every browser call. After every `navigate` or reload, call `tabs_context_mcp` again and use the `tabId` it reports before the next action: "Couldn't determine which page this action targets" comes from calls made right after a page change, and a refused call in the middle of placing an image leaves the editor half-done. When a call is refused anyway, run `check_js` before doing anything else, so you repair from the page's real state.
+For each repo in `targets` order, each app with `to_sync` above 0, launch **one** `docmost-syncer` agent and wait for it (not in the background: the next one needs the clipboard). Prompt:
 
-If a frame from another browser extension blocks scripts on Docmost, ask the user to turn that extension off for the Docmost address (or sync from a Chrome profile without it) rather than working around it.
+```
+Repo root: <repo>
+Shared folder: <SHARED>
+App: <app id>
+Docmost root URL: <root_url>
+Calibrated: <yes | no: calibrate on this app's first page with a diagram>
+Checks still to do: <targets' `checks`>
+```
 
-Avoid anything that opens a browser dialog (delete, "leave page?" confirmations). Dialogs block the extension.
+Calibration and the checks go to the first syncer. After each syncer returns, run `PIPE targets` again: what it recorded is saved (in a workspace, for every repo), so the next prompt carries only what's still open.
 
-## 3. How content gets into a page
+When a syncer returns:
+- `NEEDS USER: log in to Docmost` → ask the user to log in, then launch it again.
+- `NEEDS USER: calibration failed` → show the user what it tried and its screenshot, and decide with them. Don't sync further apps until it's settled.
+- `NEEDS USER: Chrome tools aren't reachable from a sync agent` → sync agents can't use Chrome in this setup. Do the syncs yourself instead, following `agents/docmost-syncer.md` (in the plugin folder, beside `skills/`), one app at a time, and tell the user once that this conversation carries every app's browser calls.
+- Pages failed → note them for the report and go on with the next app.
 
-Page text goes through the **OS clipboard**, not through you: `TOOL clip <prepared_file>` copies it, and a real keystroke pastes it. That keeps long pages out of the conversation and makes Docmost's own paste handler convert the markdown, exactly as when a person pastes.
+## 4. Links that waited
 
-**Write one page:**
-1. Run its `prepare_js` with `javascript_tool`. `ok: false` → the editor isn't ready; wait 2 seconds and try once more.
-2. `TOOL clip <prepared_file>`, then press `cmd+v` (macOS) or `ctrl+v` (others) with `computer` → `key`.
-3. **Poll, don't sleep:** run `check_js` every 2 seconds, up to 15 times, until `literal_markdown` is false, `headings` has reached the plan's count, and `placeholders` equals the page's number of images. Timeout → the page failed.
-4. For each image, in order: run its `place_js`, then insert the file with the recorded `docmost.image_method`:
-   - `file-upload`: open Docmost's image insert at the cursor (type `/image` and choose the upload item; find it with `find`, labels vary by version), then `file_upload` with the image `path` on the file input it opens.
-   - `clipboard-file`: `TOOL clip <path> --file-ref`, then paste with the keystroke.
-   - `paste-script`: run its `image_js`. This sends the image through the conversation, so it's the last resort.
-   Poll `check_js` until `images_uploaded` grew by one (up to 15 tries).
-5. Container pages (`container: true`): run `prepare_js`, then press `Delete` to clear whatever body the page had (a guide that was split keeps its old text there otherwise), and check the title. A split guide with a top-level `00-index.md` isn't a container: its index is the page body and is pasted like any page.
-6. **Verify after reload:** navigate to the page URL again and run `check_js` until it's `ok` (up to 10 tries). This proves Docmost saved it, not just displayed it.
-7. **Record the uploads**, if `images` wasn't empty: run `images_js` and pass its output, as is, to `TOOL sync-record --repo REPO --key <key> --image-urls '<output>'`. Every later page that shows the same diagram links to this upload instead of uploading it again, and later syncs skip unchanged diagrams. Re-run `TOOL sync-plan` before the next page, so it picks up the new links (pages already planned keep working either way).
+`PIPE targets` once more. Pages linking to an app synced later in this run are `changed` now (their links resolve). Apps with `to_sync` above 0 get one more syncer each. Links still pending after that point at apps not documented or not synced yet; they become links on a later sync.
 
-`TOOL clip` fails, or the keystroke doesn't paste (some macOS setups ignore a synthetic Cmd+V) → use `paste_text_js` for the text, and keep uploading images with the recorded image method. Tell the user once that page text now passes through the conversation (slower, costs more). `paste_js` only if no image method works at all.
+## 5. Orphans
 
-## 4. Calibrate (first sync, when `docmost.method` or `docmost.image_method` is null, or after a failure)
+Pages synced before whose doc no longer exists (an app left the repo, a split changed). Ask with **one** AskUserQuestion for all of them, listing each URL:
+- **Archive**: rename the page to `[Archived] <its current title>` and move it under a page titled `Archive` directly under the root URL (create it once if it's missing). Docmost's move is in the page menu; find it with `find`. Do this yourself in one tab.
+- **Delete**: deleting opens a confirmation dialog, which would block the extension. Open each page, point at Docmost's delete item in the page menu, and ask the user to click it and confirm. Wait until they say it's done.
 
-Prove the method on the **first content page that has a diagram** before syncing the rest:
+After either one, `TOOL sync-record --repo <its repo> --remove-key <key>`. Neither → leave them; they're asked about again next time.
 
-1. Create or open that page (section 5, step 1) and write it as in section 3. For images, try `clipboard-file` first, then `file-upload` (Docmost's image item may open the operating system's file picker, which the extension can't operate), then `paste-script`, and keep the first one where `images_uploaded` grows and a screenshot shows the diagram. Record it: `TOOL sync-record --repo REPO --method clipboard-markdown --image-method <method>` (`--method paste-markdown` if the text needed `paste_js`).
-2. Also check with a screenshot that tables and Mermaid blocks render.
-3. **Image reuse:** on the first page whose plan has `images_linked` above 0, take a screenshot after the reload check. The linked diagrams show → `TOOL sync-record --repo REPO --image-reuse ok`. They show as broken images → `TOOL sync-record --repo REPO --image-reuse off`, run `TOOL sync-plan` again (those pages now upload their own copies) and redo that page.
-4. Nothing works for the text, or no image method works → stop. Show the user the screenshot and what failed. Don't improvise a method that might change URLs or lose content. Decide with the user.
+## 6. Report
 
-**Recalibrate on failure:** when a page fails with a recorded method that worked before, Docmost's UI probably changed. Treat both methods as unknown, calibrate again on that page (which records the new ones), and retry it once. Still failing → stop the sync and report; don't push on through every page with a broken method.
-
-### Diagram theme check (first sync, or when `docmost.diagram_theme` is not set)
-
-Diagrams carry a light and a dark palette and switch by the viewer's color scheme. Check that they follow **Docmost's own theme toggle**:
-
-1. Open a synced page that has a `.drawio.svg` diagram. Note which Docmost theme is active now.
-2. Take a screenshot of the diagram. Switch Docmost's theme with its own toggle (find it with `find`/`read_page`, usually in the user or appearance menu), wait a second, and take another screenshot.
-3. The diagram's background and shape colors changed with the page → `TOOL sync-record --repo REPO --diagram-theme adaptive`.
-4. The page changed but the diagram didn't → images don't receive Docmost's toggle in this browser. Switch every diagram to the always-light palette: `TOOL svg-theme --repo REPO --mode light`, then `TOOL sync-record --repo REPO --diagram-theme light`, then run `TOOL sync-plan --repo REPO` again (every page with a diagram is now `changed`) and continue with the new plan. Tell the user the diagrams in `docs/` changed and need committing.
-5. Switch Docmost back to the theme the user had.
-
-Pages without draw.io diagrams (Mermaid only) skip this check, because Docmost renders Mermaid itself.
-
-### List number check (first sync, or when `docmost.list_numbers` is not set)
-
-Sequence stories are numbered lists whose numbers are the diagram's arrow numbers, so phase B's list may start at 5. Open a synced page with a sequence story and read its text (`get_page_text`). Find the first item under a phase heading other than `A.`:
-- It shows its own number (e.g. `5.`) → `TOOL sync-record --repo REPO --list-numbers native`.
-- Docmost restarted it at `1.` → `TOOL sync-record --repo REPO --list-numbers bold`, run `TOOL sync-plan --repo REPO` again (every page with a numbered list is now `changed`, and its prepared text uses bold numbers like `**5.**`), and continue with the new plan. The markdown files in GitLab keep their plain numbered lists.
-
-## 5. Sync each page with `changed: true`, in plan order
-
-1. **Find or create the page**
-   - `existing_url` set → navigate to it. If it's gone (404), treat the page as new.
-   - New → open the parent page (its URL from state, or `root_url` for `parent: null`). Create a child page with Docmost's "add subpage" control. Use `find`/`read_page` to locate it, since UI labels vary by version. Poll until the new page's editor shows (`prepare_js` returns `ok: true`).
-2. **Write it** as in section 3, including the reload check.
-3. **Record immediately**, so a failure halfway through doesn't lose the mapping:
-   `TOOL sync-record --repo REPO --key <key> --url <current page URL> --content-hash <content_hash>`
-4. On failure: record nothing for that page, recalibrate once (section 4), and skip the children of a page that failed to create.
-
-## 6. Orphan pages
-
-For `orphans` (a doc was split differently, merged back into one file, or an app left the repo), ask with **one** AskUserQuestion, listing each orphan's URL:
-- **Archive**: rename the page to `[Archived] <its current title>` and move it under a page titled `Archive` directly under the root URL (create that page once if it's missing). Docmost's move is in the page menu; find it with `find`.
-- **Delete**: deleting opens a confirmation dialog, which would block the extension. So open each page in the tab, point at Docmost's delete item in the page menu, and ask the user to click it and confirm. Wait for them to say it's done.
-
-After either one, `TOOL sync-record --repo REPO --remove-key <key>`. If the user answers neither, leave the orphans; they're asked about again next time.
-
-## 7. Report
-
-Pages created, updated, unchanged, failed (with reason), archived and deleted, plus the Docmost URL of each app page, and the image method used. `sync-record` changed `docs/.docgen/state.json`, so remind the user to commit it. That's what lets the next sync, from any machine, update the same pages instead of creating duplicates.
+Per repo and app: pages created, updated, unchanged, failed (with reason), archived and deleted; links still waiting; the Docmost URL of each app page; the image method. `sync-record` changed each synced repo's `docs/.docgen/state.json`, so remind the user to commit it in each repo: that's what lets the next sync, from any machine, update the same pages instead of creating duplicates. The workspace file in the parent folder isn't committed anywhere; losing it only means the next sync calibrates again.

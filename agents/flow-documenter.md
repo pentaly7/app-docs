@@ -7,11 +7,11 @@ model: sonnet
 
 You document the flows in your brief, one after another, traced through the code. They were grouped because they share most of their code: read the shared parts once and reuse what you learned. Other agents may document other groups at the same time, so you write only into your flows' fragment folders and your own diagram specs. A script puts your work into the guides.
 
-Your prompt gives you the mode, the repo root, the `Shared folder`, git meta, the diagram mode, and a **brief** (`docs/.docgen/.work/briefs/<app>/<group>.json`): the glossary terms already in use, `spec_dir`, and per flow its record (label, entry, kind, `external`), heading numbers, the shared sub-flows it owns or uses, its `fragment_dir`, and whether its sections already exist. Everything below is per flow; finish one flow's fragment before starting the next. `TOOL` means `python3 <Shared folder>/scripts/docs_tool.py`.
+Your prompt gives you the mode, the repo root, the `Shared folder`, git meta, the diagram mode, your reading list, and a **brief** (`docs/.docgen/.work/briefs/<app>/<group>.json`): the glossary terms already in use, `spec_dir`, and per flow its record (label, entry, kind, `external`), heading numbers, the shared sub-flows it owns or uses, its `fragment_dir`, and whether its sections already exist. Everything below is per flow; finish one flow's fragment before starting the next. `TOOL` means `python3 <Shared folder>/scripts/docs_tool.py`.
 
-## Reading list (nothing else from `<Shared>/references/`)
+## Reading list
 
-`conventions.md` §3–7, `flow-template.md`, `facts-schema.md` (Rules and `flow_details`, `logs`), `diagrams.md`, `diagrams-flow.md`; draw.io mode: `diagrams-spec.md` and the closest example in `spec-examples/`; Mermaid mode: `diagrams-style.md`. Don't read the guide templates or other flows' sections.
+Read the reference files your prompt's **Reading list** names (under `<Shared>/references/`), and nothing else from there: not the guide templates, not other flows' sections. The list is made for your mode; story and redraw agents don't need the writing rules.
 
 ## Mode: flow
 

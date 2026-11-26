@@ -61,15 +61,6 @@ class RunFixes(unittest.TestCase):
         self.assertIn("image-missing", rules)
         self.assertIn("diagram-missing", rules, "external by default: needs a sequence diagram")
 
-    def test_stage_and_flow_done(self):
-        out = subprocess.run([sys.executable, str(TOOL), "stage", "--repo", str(self.repo.path), "--app", "pay", "--stage", "app-done"],
-                             capture_output=True, text=True, check=True).stdout
-        self.assertIn("pay -> app-done at 20", out)
-        subprocess.run([sys.executable, str(TOOL), "flow-done", "--repo", str(self.repo.path), "--app", "pay", "--flows", "create"], check=True, capture_output=True)
-        state = json.loads((self.repo.path / "docs/.docgen/state.json").read_text())
-        self.assertEqual(state["apps"]["pay"]["flows_done"], ["create"])
-        self.assertTrue(state["apps"]["pay"]["stage_at"].endswith("Z"))
-
     def test_briefs_group_flows(self):
         app = json.loads(Path(self.state).read_text())
         app["flows"] += [{"id": "refund", "label": "POST /refund", "important": True, "group": "core"},
@@ -119,21 +110,34 @@ class RunFixes(unittest.TestCase):
         op = self.repo.path / "docs/pay/operator-guide.md"
         op.write_text(op.read_text().replace("Data diperiksa.", "![Create: flowchart](diagrams/create.flow.drawio.svg)\n\nData diperiksa."))
         plan = self.tool("sync-plan")
-        dev = next(p for p in plan["pages"] if p["key"] == "pay/dev")
-        self.assertEqual(len(dev["images"]), 1)
-        subprocess.run([sys.executable, str(TOOL), "sync-record", "--repo", str(self.repo.path), "--key", "pay/dev",
-                        "--url", "https://docmost.example.com/p/dev", "--image-urls", json.dumps(["/files/abc/create.flow.drawio.svg"])],
+        page = next(p for p in plan["pages"] if p["key"] == "pay")
+        self.assertEqual(len(page["images"]), 1)
+        subprocess.run([sys.executable, str(TOOL), "sync-record", "--repo", str(self.repo.path), "--key", "pay",
+                        "--url", "https://docmost.example.com/p/pay", "--image-urls", json.dumps(["/files/abc/create.flow.drawio.svg"])],
                        check=True, capture_output=True)
-        plan = self.tool("sync-plan")
-        op_page = next(p for p in plan["pages"] if p["key"] == "pay/op")
-        self.assertEqual(op_page["images"], [], "uploaded once, linked here")
-        self.assertEqual(op_page["images_linked"], 1)
-        self.assertIn("![create.flow.drawio](/files/abc/create.flow.drawio.svg)", Path(op_page["prepared_file"]).read_text())
-        subprocess.run([sys.executable, str(TOOL), "sync-record", "--repo", str(self.repo.path), "--remove-key", "pay/dev"],
+        page = next(p for p in self.tool("sync-plan")["pages"] if p["key"] == "pay")
+        self.assertEqual(page["images"], [], "uploaded once, linked from then on")
+        self.assertEqual(page["images_linked"], 1)
+        self.assertIn("![create.flow.drawio](/files/abc/create.flow.drawio.svg)", Path(page["prepared_file"]).read_text())
+        subprocess.run([sys.executable, str(TOOL), "sync-record", "--repo", str(self.repo.path), "--remove-key", "pay"],
                        check=True, capture_output=True)
-        op_page = next(p for p in self.tool("sync-plan")["pages"] if p["key"] == "pay/op")
-        self.assertEqual(len(op_page["images"]), 1, "its page is gone, so upload again")
+        page = next(p for p in self.tool("sync-plan")["pages"] if p["key"] == "pay")
+        self.assertEqual(len(page["images"]), 1, "its page is gone, so upload again")
 
+    def test_light_docmost_gets_light_copies_and_the_repo_stays_adaptive(self):
+        self.tool("assemble", "--app-state", self.state, code=0)
+        svg = self.repo.path / "docs/pay/diagrams/create.flow.drawio.svg"
+        svg.parent.mkdir(parents=True, exist_ok=True)
+        svg.write_text('<svg xmlns="http://www.w3.org/2000/svg"><rect fill="#DAE8FC"/></svg>')
+        self.tool("svg-theme", code=0)
+        op = self.repo.path / "docs/pay/operator-guide.md"
+        op.write_text(op.read_text().replace("Data diperiksa.", "![Create: flowchart](diagrams/create.flow.drawio.svg)\n\nData diperiksa."))
+        self.tool("sync-record", "--diagram-theme", "light", code=0)
+        self.assertIn('data-mode="adaptive"', self.tool("svg-theme", code=0) and svg.read_text(), "svg-theme ignores Docmost")
+        upload = Path(next(p for p in self.tool("sync-plan")["pages"] if p["key"] == "pay")["images"][0]["path"])
+        self.assertNotEqual(upload, svg)
+        self.assertIn('data-mode="light"', upload.read_text())
+        self.assertIn('data-mode="adaptive"', svg.read_text())
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,19 +1,19 @@
 # app-docs
 
-A Claude Code plugin that writes and maintains two documents for every app in a repository:
+A Claude Code plugin that writes and maintains two documents for every app in a repository, or in every repository of a workspace folder:
 
 - **Dev Guide**: software-engineering English, with a GitLab permalink (`path:line`, pinned to the commit the text was written from) for every process. Sections: what the app is, structure, setup, startup, app flow, data flow, dev notes, glossary.
 - **User Guide** (for operators): titled in English, written in semiformal Bahasa Indonesia (no slang, no "Anda"/"kamu", tech terms in English), humanized with humanizer-indonesia as the last step, no code references. Sections: setup, cara aplikasi bekerja, app flow, data flow, troubleshooting, log message index, alerts and monitoring, owners and escalation, glossary.
 
-Docs are written to `/docs`, with every table and list rendered by script from one facts file per app, reviewed by a fresh-context "goldfish" agent (the Elephant-Goldfish pattern), checked by a non-LLM validator, and synced one-way to Docmost.
+Docs are written to `/docs`, with every table and list rendered by script from one facts file per app, reviewed by a fresh-context "goldfish" agent (the Elephant-Goldfish pattern), and checked by a non-LLM validator. The User Guide is synced one-way to Docmost for operators; developers read the Dev Guide in GitLab.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `/app-docs:generate [drawio] [fsm]` | Main command. Fresh docs for new apps, drift update for documented ones, plugin upgrades only when you accept them (with a token estimate), resume after an interrupted run. Asks at the end whether to sync to Docmost. |
-| `/app-docs:update [drawio] [fsm]` | Drift report, then fixes only the affected sections of already-documented apps. |
-| `/app-docs:sync [docmost-url]` | One-way sync to Docmost through your logged-in Chrome. The URL is saved after the first run. |
+| `/app-docs:generate [drawio] [fsm] [max-apps N]` | Main command. Fresh docs for new apps, drift update for documented ones, plugin upgrades only when you accept them (with a token estimate), resume after an interrupted run. Run it in a repo, or in a folder of repos (workspace). |
+| `/app-docs:update [drawio] [fsm] [max-apps N]` | Drift report, then fixes only the affected sections of already-documented apps. |
+| `/app-docs:sync [docmost-url]` | One-way sync of the User Guides to Docmost through your logged-in Chrome, one sync agent per app. The URL is saved after the first run. |
 | `/app-docs:readme` | Rewrites each app's `README.md` (and a monorepo root index) by script, with no model, as a condensed copy of its Dev Guide: what it is, tech stack, quick start, configuration, structure diagram, flows, doc links, owners (CODEOWNERS, else recent committers), the commit of its oldest section. Asks first if the Dev Guide is behind `HEAD`; stops if an app has no Dev Guide yet. |
 
 Skills this plugin uses:
@@ -30,41 +30,69 @@ Skills this plugin uses:
 | Data-flow diagram, with one group per storage type (database, file storage, object storage, cache) | `data-flow`, both docs |
 | State diagram per state machine, plus an overview (with `fsm`) | `state-machine`, both docs |
 
-Colored by component kind and outcome, with a legend. Long decision conditions go into a Note beside a short diamond label. Every `.drawio.svg` carries a light and a dark palette and follows the viewer's dark mode. The first Docmost sync checks that it follows Docmost's own toggle, and switches every diagram to always-light if it doesn't. The validator checks that each one exists, is editable, is a single page, is colored and has a legend. Full rules: `shared/references/diagrams.md`.
+Colored by component kind and outcome, with a legend. Long decision conditions go into a Note beside a short diamond label. Every `.drawio.svg` carries a light and a dark palette and follows the viewer's dark mode. The first Docmost sync checks that it follows Docmost's own toggle; if it doesn't, sync uploads always-light copies and the files in `docs/` stay adaptive for GitLab. The validator checks that each one exists, is editable, is a single page, is colored and has a legend. Full rules: `shared/references/diagrams.md`.
 
 ## Install
 
 ```bash
-# from the folder that contains app-docs-marketplace/
 claude plugin marketplace add pentaly7/app-docs
 claude plugin install app-docs@app-docs
 ```
 
 ## Requirements
 
-- git, Python 3.8+ (the helper script is stdlib-only)
-- draw.io mode: the draw.io skill installed, plus the draw.io desktop CLI
+- git, Python 3.8+ (the scripts are stdlib-only)
+- draw.io mode: the draw.io skill installed, plus the draw.io desktop CLI and Graphviz
 - sync: Claude Code running locally (CLI with `--chrome`, or the desktop app), with Chrome and the Claude in Chrome extension, logged in to Docmost
+
+## Models
+
+| Who | Model | Why |
+|---|---|---|
+| Your session (the orchestrator) for generate, update and sync | **Sonnet**, set by the skills (`model: sonnet`) | It runs `pipeline.py`, launches agents and prints the report. Opus adds cost and nothing else here. |
+| app-documenter, flow-documenter, doc-fixer, operator-humanizer, docmost-syncer | Sonnet | The writing and the browser work. |
+| goldfish-reviewer | **Opus** | The quality check: a fresh reader comparing the docs with the code. Keep it on Opus. |
+
+The skill setting switches the model for the run's turn. If the final report's "Main session model" line says Opus anyway, run `/model sonnet` before the next run.
+
+## Running on Claude Pro
+
+Pro has a usage limit per 5-hour window, and a big run (16 services in one workspace) can reach it.
+- Runs use **3 agents at a time**. More at once wouldn't use fewer tokens; it would only reach the limit sooner, with more half-done work cut off when it does.
+- `max-apps N` starts at most N apps in a run (`/app-docs:generate max-apps 4`). The rest are listed as not started; the next run continues with them. The default is every app.
+- Hitting the limit mid-run is safe. Run the same command again (in a new conversation is fine): finished agents' work is found on disk, and the run resumes at the step each app was at.
+- Check where tokens went: the report ends with spend per model since the run started (`docs_tool.py usage-spend`), and the main session's model.
+
+## Workspaces
+
+Run generate, update or sync from a folder that isn't a repo, and every git repo one or two folders below it is part of the run: `parent/svc-a/`, `parent/group/svc-b/`. A repo's own nested clones and submodules aren't separate repos, and `vendor/`, `node_modules/` and similar folders are skipped. Each repo keeps its own `docs/`.
+
+- **Callees first:** the plugin guesses which service calls which from config files (base URL hosts, keys like `WALLET_URL`) and documents and syncs callees before their callers, so cross-service links work on the first pass. The guess is in `.app-docs-workspace.json` in the parent folder; if it's wrong, edit `calls` and set `"calls_source": "manual"`.
+- **Links between services:** in the markdown, a GitLab link to the other repo's guide (it works in GitLab). Sync turns a User Guide link into the other service's Docmost page once that page exists, and plain text until then.
+- **Questions once:** uncommitted changes, upgrades and the like are asked once for the whole run, not per repo.
+- **One calibration:** the first sync calibrates Docmost and the workspace file keeps it for every repo. The workspace file and the run file beside it (`.app-docs-run.json`) aren't committed anywhere.
+- A colleague who runs the plugin in their single repo gets a normal single-repo run; links already written stay as they are.
 
 ## How a run works
 
 ```
-generate/update (orchestrator, your session), at most 5 agents at a time, stages saved in docs/.docgen/state.json
-  └─ per app
+generate/update (your session, on Sonnet) → pipeline.py start / done / next → one action at a time
+  pipeline.py: meta, migrate, drift, upgrade plan, questions (once per run), jobs per app, 3 agents at a time,
+               every script step between agents, checks on each agent's output, resume, the report
+  └─ per app, per job (fresh, update, extend, facts, redraw, restory, rehumanize)
        app-documenter (Sonnet)        → app-level sections, facts file, flow inventory, app diagrams
-       flow-documenter (Sonnet) × N   → one per important flow, in parallel: its sections, diagrams, story, flow facts
-       docs_tool.py assemble/render   → fragments into the guides; every table and list rendered from the facts
+       flow-documenter (Sonnet) × N   → one per group of flows sharing code: sections, diagrams, story, flow facts
+       assemble / render              → fragments into the guides; every table and list rendered from the facts
        goldfish-reviewer (Opus)       → fresh context: Dev Guide, facts and the User Guide-only sections vs. code
        doc-fixer (Sonnet)             → applies findings, reading only the code lines each one cites
-       docs_tool.py humanize-plan     → every paragraph and table text of the User Guide sections changed in this run
-       operator-humanizer (Sonnet)    → humanizer-indonesia on all of it, one pass; table text through the facts file
-       docs_tool.py facts-diff        → the humanizer may not change a number, name or status code
-       docs_tool.py validate          → non-LLM checks; failures reported, not blocking
-  └─ report with tokens per app and stage, and the previous run's total
-  └─ suggests running /app-docs:sync in a new conversation
+       operator-humanizer (Sonnet)    → humanizer-indonesia on the User Guide sections changed in this run
+       facts-diff                     → the humanizer may not change a number, name or status code
+       stamp / validate               → per-section provenance; non-LLM checks, reported not blocking
+  └─ report: per app, then spend per model since the run started
+  └─ "run /app-docs:sync in a new conversation"
 ```
 
-Diagrams are laid out and exported in one script call per agent (`docs_tool.py diagrams`); agents look only at the PNGs of diagrams it flags.
+Each agent gets a reading list made for its mode (story and redraw agents skip the writing templates, Mermaid runs skip the draw.io spec rules). Diagrams are laid out and exported in one script call per agent (`docs_tool.py diagrams`); agents look only at the PNGs of diagrams it flags.
 
 Fact checks (no LLM): numbers with units, backtick names and status codes are compared before and after the humanizer (any change fails, and the humanizer gets one retry), before and after the fix step (reported), and between the two guides (mismatches reported for you to decide). Log messages and metric names in the User Guide must exist in the code.
 
@@ -95,7 +123,7 @@ Some facts aren't in the repository: how production is deployed, who is on call,
 
 ## Customizing
 
-All writing rules live in `shared/references/`: `conventions.md` (the hard rules), the two guide templates and `flow-template.md`, `facts-schema.md`, `diagrams*.md` (split by who reads them), `humanizer.md`, `voice-operator-docs.md`, and `pipeline.md`. If you change them in a way that should regenerate existing docs, bump `TEMPLATE_VERSION` in `shared/scripts/docs_tool.py` (and the version in the title of `conventions.md`). The next `generate` regenerates everything. If you only change the humanizer rules or the voice preset, bump `HUMANIZER_VERSION` instead: the next run re-humanizes the operator guides and touches nothing else. If you only change diagram rules, bump `DIAGRAM_VERSION`: the next run redraws diagrams only. The dark palette lives in `DARK_FILL` / `DARK_STROKE` / `DARK_TEXT` in `docs_tool.py`; keep it in step with diagrams-style.md §8. Each agent's reading list is in its own file under `agents/`.
+All writing rules live in `shared/references/`: `conventions.md` (the hard rules), the two guide templates and `flow-template.md`, `facts-schema.md`, `diagrams*.md` (split by who reads them), `humanizer.md` and `voice-operator-docs.md`. The run itself is `shared/scripts/pipeline.py`, described in `pipeline.md`. If you change them in a way that should regenerate existing docs, bump `TEMPLATE_VERSION` in `shared/scripts/docs_tool.py` (and the version in the title of `conventions.md`). The next `generate` regenerates everything. If you only change the humanizer rules or the voice preset, bump `HUMANIZER_VERSION` instead: the next run re-humanizes the operator guides and touches nothing else. If you only change diagram rules, bump `DIAGRAM_VERSION`: the next run redraws diagrams only. The dark palette lives in `DARK_FILL` / `DARK_STROKE` / `DARK_TEXT` in `docs_tool.py`; keep it in step with diagrams-style.md §8. Each agent's reading list per mode is `reading_list` in `pipeline.py` (app-documenter and flow-documenter); the other agents name theirs in their own files under `agents/`.
 
 ## State machines (`fsm`)
 
@@ -104,6 +132,16 @@ Add `fsm` once (`/app-docs:generate fsm`) and every app in the repo gets state m
 ## Upgrading
 
 Upgrades are opt-in. When the plugin's rules are newer than the ones a repo's docs were written with, `generate`/`update` show what would be redone and a rough token estimate, and ask. "Not now" keeps the repo's versions: only real drift is fixed, the validator doesn't ask for newer sections, and you're asked again next run. Mechanical changes (titles, subtitles, links, page keys) are applied by `docs_tool.py migrate` without asking, because they cost nothing and the new conventions depend on them.
+
+### From 2.10.3 (to 3.0.0)
+
+Nothing in your docs is redone. What changes:
+- **Finish 2.x runs first.** 3.0 doesn't continue 2.x stages: an app left mid-run (stage `app-done`, `drafted`, …) makes the next run ask whether to start it fresh or stop so you can finish it with 2.10.3.
+- **The orchestrator runs on Sonnet** and only follows `pipeline.py`. The script does every non-model step, so none can be skipped.
+- **Docmost gets the User Guide only**, as the app's own page (no "User Guide" sub-page, no "Dev Guide" page). `migrate` drops Dev Guide page keys from `state.json` without touching Docmost. If you had synced 2.x pages, the old User Guide sub-page shows up as an orphan on the next sync, to archive or delete.
+- **Diagrams in `docs/` stay adaptive** (light and dark), because GitLab shows them. When Docmost's theme toggle doesn't reach images, sync uploads light copies instead of changing your files.
+- **Workspaces**, `max-apps N`, 3 agents at a time, questions once per run, one sync agent per app.
+- **Removed:** `usage-record` and `usage-report` (the local token log). The report shows real spend from `usage-spend`.
 
 From 2.10.2 (to 2.10.3): nothing to redo. The humanizer now polishes every paragraph and the table text of each User Guide section a run writes or changes (before: only flagged paragraphs, never tables). Sections that don't change aren't re-polished; to polish a whole existing guide once, bump `HUMANIZER_VERSION` and accept the upgrade.
 
@@ -145,14 +183,8 @@ Template version 2 changes diagrams, the operator guide's voice and its sections
 
 ## Known limits
 
-- **Docmost page titles:** only the app's page carries the app name. Sub-pages drop it ("User Guide", "Dev Guide"). The markdown files in GitLab keep their full H1.
-- **Docmost sync is UI automation.** Page text goes through the OS clipboard and a real paste, diagrams through Docmost's image upload. The first sync calibrates both and stops if your Docmost version doesn't support them; a page that fails later triggers one recalibration. A Docmost UI upgrade can still break it.
+- **Docmost page titles:** each app's page is titled with the app's name; split sub-pages drop it. The markdown files in GitLab keep their full H1.
+- **Docmost sync is UI automation.** Page text goes through the OS clipboard and a real paste, diagrams through Docmost's image upload. The first sync calibrates both and stops if your Docmost version doesn't support them; a page that fails later triggers one recalibration. A Docmost UI upgrade can still break it. Sync agents run one at a time because they share the clipboard.
+- **Sync agents and Chrome:** subagents are documented to inherit the Claude in Chrome tools. If they can't reach Chrome in your setup, sync says so and runs every app in its own conversation instead.
 - **Docmost inline comments don't survive a sync.** Each sync replaces the page body, so comments attached to text in it are lost or detached. URLs, page history and the page tree are kept. Keep notes in separate pages, or propose changes as a merge request on the markdown.
-- **Token figures:** the report's per-agent "final context" is each agent's context size at the end, not its spend. Compare runs on the spend line (`usage-spend`), which reads Claude Code's session transcripts; it can't see sessions run on another machine.
-- **Sync publishes whatever is in GitLab**, validator failures included: there is no gate. Check the last run's validator report (a `secret-*` failure especially) before you sync; a secret that reaches Docmost stays in its page history.
-- **Hand edits outside keep blocks are overwritten** by the next rewrite of that section, in the guides and in READMEs.
-- **Pages without a doc** (an app left the repo, a split doc was merged back) are never removed silently: sync asks whether to archive them (renamed and moved under an Archive page) or delete them (you click Delete).
-- **Code links** point at your `origin` remote. They 404 until the commit is pushed, and the run says so. Without an `origin` remote, references stay plain text.
-- Mermaid mode doesn't get the dark palette: Docmost renders Mermaid itself.
-- Diagrams in Docmost are images, scaled to the page width. Large flowcharts are split into sub-flow files so each stays readable. Edit them through the `.drawio.svg` in GitLab, then sync.
-- Importance ranking and flow detection come from static reading of the code. Reflection-heavy or config-driven routing may be under-detected. The goldfish review is the check for that.
+- **Call order is a guess** from config files. A wrong guess only delays some cross-service links to the next sync; fix it in the workspace file.

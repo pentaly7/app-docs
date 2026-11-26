@@ -21,11 +21,9 @@ Subcommands (all print JSON to stdout):
   assemble    merge flow agents' fragments into the guides, facts and app state, then render
   readme      rewrite the READMEs from the Dev Guides and facts (no model)
   check-fragment  a flow agent's self-check of its fragment before it finishes
-  stage / flow-done  record pipeline progress with the real time
   usage-spend real token spend of a run, from Claude Code's transcripts
   stamp       per-section dirty flag and subtitle, and file contents so drift survives squash merges
   render      fill the tables and lists in both guides from docs/.docgen/facts/<app>.json
-  usage-record / usage-report   tokens each agent used, per run (local, for comparing runs)
   owners      owners and escalation target for one app (CODEOWNERS, else git history)
   upgrade-plan  what a plugin upgrade would redo, with a rough token estimate
   skill-pin   record the version of an outside skill (humanizer, draw.io) and report changes
@@ -474,38 +472,6 @@ def _stamp(repo, app_state):
             if changed:
                 path.write_text("\n".join(doc.lines) + "\n", encoding="utf-8")
     return stamped
-
-
-def _now():
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def cmd_stage(args):
-    """Set an app's pipeline stage with the real time (never hand-edit state.json for this)."""
-    path = Path(args.repo) / DOCS_DIR / ".docgen" / "state.json"
-    state = load_json(path)
-    app = state.setdefault("apps", {}).setdefault(args.app, {})
-    app["stage"] = args.stage
-    app["stage_at"] = _now()
-    if args.error:
-        app["stage_error"] = args.error
-    else:
-        app.pop("stage_error", None)
-    if args.stage == "done":
-        app.pop("flows_done", None)
-    save_json(path, state)
-    print("%s -> %s at %s" % (args.app, args.stage, app["stage_at"]))
-
-
-def cmd_flow_done(args):
-    path = Path(args.repo) / DOCS_DIR / ".docgen" / "state.json"
-    state = load_json(path)
-    done = state.setdefault("apps", {}).setdefault(args.app, {}).setdefault("flows_done", [])
-    for flow in args.flows.split(","):
-        if flow not in done:
-            done.append(flow)
-    save_json(path, state)
-    print("%s flows done: %s" % (args.app, ", ".join(done)))
 
 
 def cmd_stamp(args):
@@ -1659,30 +1625,6 @@ def cmd_render(args):
 
 # ---------------------------------------------------------------- usage
 
-def _usage_file(repo):
-    # local only (.work/ is git-ignored): it's for comparing runs on this machine, not for the repo
-    return Path(repo) / DOCS_DIR / ".docgen" / ".work" / "usage.jsonl"
-
-
-def cmd_usage_record(args):
-    """Append one agent's token count and duration, as reported when the agent finished."""
-    path = _usage_file(Path(args.repo).resolve())
-    path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {"run": args.run, "app": args.app, "stage": args.stage, "agent": args.agent,
-             "tokens": args.tokens, "ms": args.ms, "plugin_version": _plugin_version()}
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, sort_keys=True) + "\n")
-    emit({"ok": True})
-
-
-def _plugin_version():
-    manifest = Path(__file__).resolve().parents[2] / ".claude-plugin" / "plugin.json"
-    try:
-        return json.loads(manifest.read_text()).get("version")
-    except (OSError, ValueError):
-        return None
-
-
 def _transcript_dirs():
     base = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "projects"
     return [base] if base.is_dir() else []
@@ -1739,33 +1681,6 @@ def cmd_usage_spend(args):
             m[k] += r[k]
     emit({"since": since, "transcripts": len(per_file), "totals": totals, "by_model": by_model,
           "agents": sorted(({"file": Path(f).name, **r} for f, r in per_file.items()), key=lambda r: -r["output"])})
-
-
-def cmd_usage_report(args):
-    """Tokens per app and stage for one run (default: the latest), and the previous run for comparison."""
-    path = _usage_file(Path(args.repo).resolve())
-    entries = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()] if path.exists() else []
-    runs = sorted({e["run"] for e in entries})
-    if not runs:
-        emit({"runs": [], "note": "nothing recorded yet"})
-
-    def summary(run):
-        rows = [e for e in entries if e["run"] == run]
-        apps = {}
-        for e in rows:
-            stage = apps.setdefault(e["app"], {}).setdefault(e["stage"], {"tokens": 0, "ms": 0, "agents": 0, "unknown": 0})
-            stage["agents"] += 1
-            if e.get("tokens") is None:
-                stage["unknown"] += 1
-            else:
-                stage["tokens"] += e["tokens"]
-            stage["ms"] += e.get("ms") or 0
-        total = sum(e["tokens"] or 0 for e in rows)
-        return {"run": run, "plugin_version": rows[0].get("plugin_version"), "total_tokens": total, "apps": apps}
-
-    current = args.run or runs[-1]
-    earlier = [r for r in runs if r < current]
-    emit({"current": summary(current), "previous": summary(earlier[-1]) if earlier else None})
 
 
 # ---------------------------------------------------------------- upgrades and skills
@@ -1946,7 +1861,9 @@ def cmd_svg_theme(args):
     repo = Path(args.repo).resolve()
     state_path = repo / DOCS_DIR / ".docgen" / "state.json"
     state = load_json(state_path) if state_path.exists() else {}
-    mode = args.mode or state.get("docmost", {}).get("diagram_theme") or "adaptive"
+    # The files in docs/ stay adaptive: GitLab shows them too. A Docmost that needs always-light gets
+    # light copies made at sync time (sync-plan), so the repo never depends on one viewer's quirks.
+    mode = args.mode or "adaptive"
     apps = [args.app] if args.app else sorted(state.get("apps", {}))
     done = []
     for app_id in apps:
@@ -2057,7 +1974,14 @@ def cmd_migrate(args):
             if new and new != old and new not in pages:
                 pages[new] = pages.pop(old)
                 report["page_keys"][old] = new
-    if report["page_keys"]:
+        # 3.0: the Dev Guide lives in GitLab only. Forget its pages without asking; nothing in Docmost is touched.
+        images = state.get("docmost", {}).get("images", {})
+        for key in [k for k in list(pages) if k == "%s/dev" % app_id or k.startswith("%s/dev/" % app_id)]:
+            pages.pop(key)
+            report["dev_pages_dropped"] = report.get("dev_pages_dropped", 0) + 1
+            for digest in [h for h, v in images.items() if v.get("page") == key]:
+                images.pop(digest)
+    if report["page_keys"] or report.get("dev_pages_dropped"):
         save_json(state_path, state)
     emit(report)
 
@@ -2207,12 +2131,27 @@ def _image_hash(path):
     return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest() if Path(path).is_file() else None
 
 
-def _prepare_markdown(path, bold_numbers=False, uploaded=None):
+MD_LINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\(([^)\s]+)\)")
+
+
+def _upload_copy(image, theme, work):
+    """The file to upload for one diagram: the repo's own, or a light copy when Docmost's toggle doesn't reach images."""
+    if theme != "light" or not image.name.endswith(".drawio.svg") or not image.is_file():
+        return image
+    copy = work / "images" / image.name
+    copy.parent.mkdir(parents=True, exist_ok=True)
+    copy.write_text(apply_theme(image.read_text(encoding="utf-8"), "light"), encoding="utf-8")
+    return copy
+
+
+def _prepare_markdown(path, bold_numbers=False, uploaded=None, theme="adaptive", work=None, links=None):
     """Strip docgen anchors and the H1; swap drawio images for upload placeholders, or, when the same
     file was already uploaded to Docmost (`uploaded`: content hash → url), for a link to that upload.
-    Returns (text, [abs image paths to upload], [(name, hash)] of every image in page order)."""
+    `links(target, source)` turns a markdown link target into a Docmost URL, "" for plain text, or None to leave it.
+    Returns (text, [abs image paths to upload], [(name, hash)] of every image in page order, links left as text)."""
     images, order = [], []
     out = []
+    pending = []
     title_dropped = False
     in_fence = False
     for line in Path(path).read_text(encoding="utf-8").splitlines():
@@ -2228,15 +2167,25 @@ def _prepare_markdown(path, bold_numbers=False, uploaded=None):
             continue
 
         def swap(match):
-            image = (Path(path).parent / match.group(1)).resolve()
+            image = _upload_copy((Path(path).parent / match.group(1)).resolve(), theme, work)
             digest = _image_hash(image)
             order.append((image.name, digest))
             if uploaded and digest in uploaded:
                 return "![%s](%s)" % (image.stem, uploaded[digest]["url"])
             images.append(str(image))
             return "[[diagram:%s]]" % image.name
-        out.append(IMAGE_RE.sub(swap, line))
-    return "\n".join(out).strip() + "\n", images, order
+
+        def link(match):
+            url = links(match.group(2), Path(path)) if links else None
+            if url is None:
+                return match.group(0)
+            if url == "":
+                pending.append(match.group(2))
+                return match.group(1)
+            return "[%s](%s)" % (match.group(1), url)
+        line = IMAGE_RE.sub(swap, line)
+        out.append(line if in_fence else MD_LINK_RE.sub(link, line))
+    return "\n".join(out).strip() + "\n", images, order, pending
 
 
 PASTE_JS = r"""(async () => {
@@ -2396,21 +2345,126 @@ def _heading_count(markdown):
     return count
 
 
+# ---------------------------------------------------------------- workspace (several repos in one parent folder)
+
+WORKSPACE_FILE = ".app-docs-workspace.json"
+# Docmost facts that are the same for every repo synced to one Docmost: calibrated once per workspace
+CALIBRATION_KEYS = ("root_url", "method", "image_method", "diagram_theme", "list_numbers", "image_reuse")
+
+
+def find_workspace(repo):
+    """The workspace folder and file that list this repo (one or two levels up), else (None, None)."""
+    repo = Path(repo).resolve()
+    for folder in (repo.parent, repo.parent.parent):
+        path = folder / WORKSPACE_FILE
+        if path.is_file():
+            workspace = load_json(path)
+            if any((folder / r["path"]).resolve() == repo for r in workspace.get("repos", [])):
+                return folder, workspace
+    return None, None
+
+
+def docmost_settings(repo, state):
+    """The repo's Docmost settings. Inside a workspace, the workspace's calibration wins: it's the latest one
+    for that Docmost, while a repo keeps whatever was true when it was last synced."""
+    settings = dict(state.get("docmost", {}))
+    _, workspace = find_workspace(repo)
+    for key in CALIBRATION_KEYS:
+        if (workspace or {}).get("docmost", {}).get(key) is not None:
+            settings[key] = workspace["docmost"][key]
+    return settings
+
+
+def _op_pages(repo, state):
+    """Every Docmost page of a repo's User Guides, in parent-before-child order: (key, parent, title, source md or None).
+    The app's own page is the User Guide (single mode) or the top index of a split one."""
+    out = []
+    for app_id, app in sorted(state.get("apps", {}).items()):
+        if app.get("stage") != "done":
+            continue
+        app_state = load_json(repo / DOCS_DIR / ".docgen" / "apps" / ("%s.json" % app_id))
+        app_name = _app_name(repo, app_state, app_id)
+        target = repo / app_state["docs"]["operator"]
+        if target.is_file():
+            out.append((app_id, None, app_name, target))
+            continue
+        top_index = target / "00-index.md"
+        out.append((app_id, None, app_name, top_index if top_index.exists() else None))
+
+        def folder_page(folder):
+            # A sub-folder's 00-index.md is that folder's page; its other files hang under it.
+            if folder == target:
+                return app_id
+            index = folder / "00-index.md"
+            return page_key(app_id, "operator", index, single=False) if index.exists() else folder_page(folder.parent)
+
+        for md in sorted(target.rglob("*.md")):
+            if md == top_index:
+                continue
+            is_index = md.name == "00-index.md" and md.parent != target
+            parent = folder_page(md.parent.parent if is_index else md.parent)
+            out.append((page_key(app_id, "operator", md, single=False), parent, _subpage_title(_title(md, md.stem), app_name), md))
+    return out
+
+
+def _link_resolver(repo):
+    """links(target, source) for _prepare_markdown: a link to any User Guide file in this repo or its workspace
+    becomes that page's Docmost URL, or plain text ("") while that page isn't synced yet. Docs keep ordinary
+    relative or GitLab links, so they work in GitLab; only the Docmost copy is rewritten."""
+    folder, workspace = find_workspace(repo)
+    roots = [Path(repo).resolve()]
+    if workspace:
+        roots += [(folder / r["path"]).resolve() for r in workspace.get("repos", []) if (folder / r["path"]).resolve() != roots[0]]
+    by_file, bases = {}, []
+    for root in roots:
+        state_path = root / DOCS_DIR / ".docgen" / "state.json"
+        if not state_path.is_file():
+            continue
+        state = load_json(state_path)
+        urls = {k: v.get("url") for k, v in state.get("docmost", {}).get("pages", {}).items()}
+        for key, _, _, md in _op_pages(root, state):
+            if md is not None:
+                by_file[md.resolve()] = urls.get(key) or ""
+        base = web_url(root)
+        if base:
+            bases.append((base.rstrip("/") + "/-/blob/", root))
+
+    def resolve(target, source):
+        target = target.split("#", 1)[0]
+        if not target.endswith(".md"):
+            return None
+        if target.startswith(("http://", "https://")):
+            for prefix, root in bases:
+                if target.startswith(prefix):
+                    parts = target[len(prefix):].split("/")
+                    for i in range(1, len(parts)):  # the ref (branch, tag or sha) may contain slashes
+                        found = by_file.get((root / "/".join(parts[i:])).resolve())
+                        if found is not None:
+                            return found
+            return None
+        return by_file.get((source.parent / urllib.parse.unquote(target)).resolve())
+    return resolve
+
+
 def cmd_sync_plan(args):
     repo = Path(args.repo).resolve()
     state = load_json(repo / DOCS_DIR / ".docgen" / "state.json")
-    synced = state.get("docmost", {}).get("pages", {})
-    bold_numbers = state.get("docmost", {}).get("list_numbers") == "bold"
+    docmost = docmost_settings(repo, state)
+    synced = docmost.get("pages", {})
+    bold_numbers = docmost.get("list_numbers") == "bold"
+    theme = docmost.get("diagram_theme") or "adaptive"
     # an image uploaded once (on any page) is linked from every other page, unless calibration found that broken
-    uploaded = {} if state.get("docmost", {}).get("image_reuse") == "off" else state.get("docmost", {}).get("images", {})
+    uploaded = {} if docmost.get("image_reuse") == "off" else docmost.get("images", {})
     work = repo / DOCS_DIR / ".docgen" / ".work" / "sync"
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
+    links = _link_resolver(repo)
     pages = []
 
     def add(key, parent, title, source=None):
-        text, images, order = _prepare_markdown(source, bold_numbers, uploaded) if source else ("", [], [])
+        text, images, order, pending = _prepare_markdown(source, bold_numbers, uploaded, theme, work, links) if source else ("", [], [], [])
         # Title is part of the hash, so a renamed page is re-synced even when its body didn't change.
+        # Resolved links are in the text, so a page whose link target got synced since is re-synced too.
         digest = hashlib.sha256((title + "\n" + text).encode())
         for image in images:
             digest.update(Path(image).read_bytes() if Path(image).is_file() else b"missing")
@@ -2441,52 +2495,31 @@ def cmd_sync_plan(args):
                 entry["image_js"] = str(fallback)
             image_list.append(entry)
         entry = {"key": key, "parent": parent, "title": title, "existing_url": synced.get(key, {}).get("url"),
-                 "container": source is None, "images": image_list, "images_linked": len(order) - len(images), "content_hash": "sha256:" + digest.hexdigest()}
+                 "container": source is None, "images": image_list, "images_linked": len(order) - len(images),
+                 "links_pending": pending, "content_hash": "sha256:" + digest.hexdigest()}
         entry.update(files)
         entry["changed"] = synced.get(key, {}).get("content_hash") != entry["content_hash"]
         pages.append(entry)
 
-    for app_id, app in sorted(state.get("apps", {}).items()):
-        if app.get("stage") != "done":
+    for key, parent, title, source in _op_pages(repo, state):
+        if getattr(args, "app", None) and key.split("/", 1)[0] != args.app:
             continue
-        app_state = load_json(repo / DOCS_DIR / ".docgen" / "apps" / ("%s.json" % app_id))
-        app_name = _app_name(repo, app_state, app_id)
-        add(app_id, None, app_name)
-        for kind, label in (("operator", "User Guide"), ("dev", "Dev Guide")):
-            target = repo / app_state["docs"][kind]
-            top = page_key(app_id, kind)
-            if target.is_file():
-                add(top, app_id, _subpage_title(_title(target, label), app_name), target)
-                continue
-            # split mode: the same key becomes the container, so the page survives a split. Its body is the
-            # top-level 00-index.md when there is one; otherwise it's emptied, so no pre-split text stays on it.
-            top_index = target / "00-index.md"
-            add(top, app_id, label, top_index if top_index.exists() else None)
-
-            def folder_page(folder):
-                # A sub-folder's 00-index.md is that folder's page; its other files hang under it.
-                if folder == target:
-                    return top
-                index = folder / "00-index.md"
-                return page_key(app_id, kind, index, single=False) if index.exists() else folder_page(folder.parent)
-
-            for md in sorted(target.rglob("*.md")):
-                if md == target / "00-index.md":
-                    continue
-                is_index = md.name == "00-index.md" and md.parent != target
-                parent = folder_page(md.parent.parent if is_index else md.parent)
-                add(page_key(app_id, kind, md, single=False), parent, _subpage_title(_title(md, md.stem), app_name), md)
+        add(key, parent, title, source)
     keys = [p["key"] for p in pages]
     duplicates = sorted({k for k in keys if keys.count(k) > 1})
     if duplicates:
         emit({"error": "two files map to the same Docmost page (same first section anchor): %s. Fix the docs (validate reports anchor-duplicate) before syncing." % ", ".join(duplicates)}, 2)
-    planned = set(keys)
+    planned = {key for key, _, _, _ in _op_pages(repo, state)}
     orphans = [{"key": k, "url": v.get("url")} for k, v in sorted(synced.items()) if k not in planned and v.get("url")]
-    emit({"root_url": state.get("docmost", {}).get("root_url"),
-          "method": state.get("docmost", {}).get("method"),
-          "image_method": state.get("docmost", {}).get("image_method"),
+    emit({"root_url": docmost.get("root_url"),
+          "method": docmost.get("method"),
+          "image_method": docmost.get("image_method"),
+          "diagram_theme": theme,
+          "list_numbers": docmost.get("list_numbers"),
+          "image_reuse": docmost.get("image_reuse"),
           "pages": pages,
           "to_sync": sum(1 for p in pages if p["changed"]),
+          "links_pending": sum(len(p["links_pending"]) for p in pages),
           "orphans": orphans})
 
 
@@ -2495,20 +2528,19 @@ def cmd_sync_record(args):
     path = repo / DOCS_DIR / ".docgen" / "state.json"
     state = load_json(path)
     docmost = state.setdefault("docmost", {})
-    if args.root_url:
-        docmost["root_url"] = args.root_url
-    if args.method:
-        docmost["method"] = args.method
-    if args.diagram_theme:
-        docmost["diagram_theme"] = args.diagram_theme
-    if args.list_numbers:
-        docmost["list_numbers"] = args.list_numbers
-    if args.image_method:
-        docmost["image_method"] = args.image_method
-    if args.image_reuse:
-        docmost["image_reuse"] = args.image_reuse
-        if args.image_reuse == "off":
-            docmost.pop("images", None)
+    calibration = {}
+    for key in CALIBRATION_KEYS:
+        value = getattr(args, key)
+        if value:
+            docmost[key] = calibration[key] = value
+    if args.image_reuse == "off":
+        docmost.pop("images", None)
+    if calibration:
+        # the same Docmost serves every repo of a workspace: the next repo starts calibrated
+        folder, workspace = find_workspace(repo)
+        if workspace is not None:
+            workspace.setdefault("docmost", {}).update(calibration)
+            save_json(folder / WORKSPACE_FILE, workspace)
     if args.remove_key:
         docmost.setdefault("pages", {}).pop(args.remove_key, None)
         # images uploaded on that page go with it: the next page that needs them uploads them again
@@ -2543,6 +2575,8 @@ def main():
     for name in ("meta", "detect", "drift", "sync-plan", "migrate", "readme-plan", "upgrade-plan"):
         p = sub.add_parser(name)
         p.add_argument("--repo", default=".")
+        if name == "sync-plan":
+            p.add_argument("--app", help="only this app's pages (one sync agent per app)")
     p = sub.add_parser("author")
     p.add_argument("--repo", default=".")
     p.add_argument("file")
@@ -2611,15 +2645,6 @@ def main():
     p.add_argument("--repo", default=".")
     p.add_argument("--app-state", required=True)
     p.add_argument("--fragment-dir", required=True)
-    p = sub.add_parser("stage")
-    p.add_argument("--repo", default=".")
-    p.add_argument("--app", required=True)
-    p.add_argument("--stage", required=True)
-    p.add_argument("--error")
-    p = sub.add_parser("flow-done")
-    p.add_argument("--repo", default=".")
-    p.add_argument("--app", required=True)
-    p.add_argument("--flows", required=True, help="comma-separated flow ids")
     p = sub.add_parser("usage-spend")
     p.add_argument("--repo", default=".")
     p.add_argument("--since", required=True, help="the run's start time, UTC, e.g. 2026-11-23T04:30:00Z")
@@ -2631,17 +2656,6 @@ def main():
     p.add_argument("--app-state", required=True)
     p.add_argument("--check", action="store_true", help="write nothing; exit 1 if a block is stale or missing")
     p.add_argument("--refresh-owners", action="store_true", help="take a new owners snapshot (once per run)")
-    p = sub.add_parser("usage-record")
-    p.add_argument("--repo", default=".")
-    p.add_argument("--run", required=True, help="the run's start time, the same for every agent of one run")
-    p.add_argument("--app", required=True)
-    p.add_argument("--stage", required=True)
-    p.add_argument("--agent", required=True)
-    p.add_argument("--tokens", type=int, help="total_tokens from the agent's completion; leave out if not reported")
-    p.add_argument("--ms", type=int)
-    p = sub.add_parser("usage-report")
-    p.add_argument("--repo", default=".")
-    p.add_argument("--run")
     p = sub.add_parser("owners")
     p.add_argument("--repo", default=".")
     p.add_argument("--root", required=True, help="the app's folder, repo-relative ('.' for the repo root)")
@@ -2660,8 +2674,8 @@ def main():
     handlers = {"meta": cmd_meta, "detect": cmd_detect, "author": cmd_author, "drift": cmd_drift,
                 "validate": cmd_validate, "svg-theme": cmd_svg_theme, "migrate": cmd_migrate, "readme-plan": cmd_readme_plan,
                 "facts-snapshot": cmd_facts_snapshot, "facts-diff": cmd_facts_diff, "owners": cmd_owners,
-                "render": cmd_render, "keep-snapshot": cmd_keep_snapshot, "keep-restore": cmd_keep_restore, "stamp": cmd_stamp, "check-fragment": cmd_check_fragment, "stage": cmd_stage,
-                "flow-done": cmd_flow_done, "usage-spend": cmd_usage_spend, "readme": cmd_readme, "humanize-plan": cmd_humanize_plan, "facts-set": cmd_facts_set, "briefs": cmd_briefs, "diagrams": cmd_diagrams, "assemble": cmd_assemble, "usage-record": cmd_usage_record, "usage-report": cmd_usage_report,
+                "render": cmd_render, "keep-snapshot": cmd_keep_snapshot, "keep-restore": cmd_keep_restore, "stamp": cmd_stamp, "check-fragment": cmd_check_fragment,
+                "usage-spend": cmd_usage_spend, "readme": cmd_readme, "humanize-plan": cmd_humanize_plan, "facts-set": cmd_facts_set, "briefs": cmd_briefs, "diagrams": cmd_diagrams, "assemble": cmd_assemble,
                 "upgrade-plan": cmd_upgrade_plan, "skill-pin": cmd_skill_pin, "clip": cmd_clip, "sync-plan": cmd_sync_plan, "sync-record": cmd_sync_record}
     try:
         handlers[args.cmd](args)

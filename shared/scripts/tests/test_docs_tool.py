@@ -265,10 +265,10 @@ class Migrate(unittest.TestCase):
             state_file.write_text(json.dumps(state))
             run(repo.path, "migrate", "--repo", str(repo.path), code=0)
             pages = json.loads(state_file.read_text())["docmost"]["pages"]
-            self.assertEqual(pages, {"pay": {"url": "u0"}, "pay/op": {"url": "u1"}, "pay/dev": {"url": "u2"}})
+            self.assertEqual(pages, {"pay": {"url": "u0"}, "pay/op": {"url": "u1"}}, "Dev Guide pages are dropped in 3.0")
             plan = run(repo.path, "sync-plan", "--repo", str(repo.path), code=0)[1]
-            self.assertEqual({p["key"]: p["existing_url"] for p in plan["pages"]}, {"pay": "u0", "pay/op": "u1", "pay/dev": "u2"})
-            self.assertEqual(plan["orphans"], [])
+            self.assertEqual({p["key"]: p["existing_url"] for p in plan["pages"]}, {"pay": "u0"}, "the app page is the User Guide")
+            self.assertEqual(plan["orphans"], [{"key": "pay/op", "url": "u1"}])
         finally:
             repo.cleanup()
 
@@ -291,7 +291,7 @@ class Sync(unittest.TestCase):
     def test_prepared_files_exist(self):
         repo, _ = documented_repo()
         try:
-            page = next(p for p in run(repo.path, "sync-plan", "--repo", str(repo.path))[1]["pages"] if p["key"] == "pay/op")
+            page = next(p for p in run(repo.path, "sync-plan", "--repo", str(repo.path))[1]["pages"] if p["key"] == "pay")
             for name in ("prepared_file", "prepare_js", "check_js", "paste_js"):
                 self.assertTrue(Path(page[name]).is_file(), name)
             self.assertNotIn("docgen:section", Path(page["prepared_file"]).read_text())
@@ -368,21 +368,28 @@ class Upgrades(unittest.TestCase):
 
 
 class Usage(unittest.TestCase):
-    def test_record_and_compare_runs(self):
+    def test_spend_splits_transcripts_by_model_and_dedupes_messages(self):
         repo, _ = documented_repo()
+        config = Path(tempfile.mkdtemp())
         try:
-            def record(run_id, stage, agent, *extra):
-                subprocess.run([sys.executable, str(TOOL), "usage-record", "--repo", str(repo.path), "--run", run_id,
-                                "--app", "pay", "--stage", stage, "--agent", agent, *extra], check=True, capture_output=True)
-            record("2026-11-20T01:00:00Z", "draft", "app-documenter", "--tokens", "900")
-            record("2026-11-22T01:00:00Z", "draft", "app-documenter", "--tokens", "500", "--ms", "1000")
-            record("2026-11-22T01:00:00Z", "review", "goldfish-reviewer")
-            report = run(repo.path, "usage-report", "--repo", str(repo.path), code=0)[1]
-            self.assertEqual(report["current"]["total_tokens"], 500)
-            self.assertEqual(report["current"]["apps"]["pay"]["review"]["unknown"], 1)
-            self.assertEqual(report["previous"]["total_tokens"], 900)
+            project = config / "projects" / "x"
+            project.mkdir(parents=True)
+            def line(mid, model, out, sidechain=False):
+                return json.dumps({"timestamp": "2026-11-22T02:00:00Z", "cwd": str(repo.path), "isSidechain": sidechain,
+                                   "message": {"id": mid, "model": model, "usage": {"input_tokens": 1, "output_tokens": out,
+                                               "cache_creation_input_tokens": 10, "cache_read_input_tokens": 100}}})
+            (project / "main.jsonl").write_text("\n".join([line("m1", "sonnet", 5), line("m1", "sonnet", 5)]))
+            (project / "agent.jsonl").write_text(line("a1", "opus", 7, sidechain=True))
+            env = dict(os.environ, CLAUDE_CONFIG_DIR=str(config))
+            out = subprocess.run([sys.executable, str(TOOL), "usage-spend", "--repo", str(repo.path), "--since", "2026-11-22T01:00:00Z"],
+                                 capture_output=True, text=True, env=env)
+            report = json.loads(out.stdout)
+            self.assertEqual(report["totals"]["output"], 12)
+            self.assertEqual(report["by_model"]["opus"]["output"], 7)
+            self.assertEqual(sorted(r["subagent"] for r in report["agents"]), [False, True])
         finally:
             repo.cleanup()
+            shutil.rmtree(config, ignore_errors=True)
 
 
 def v4_repo(split=False):
@@ -507,7 +514,7 @@ class Rendering(unittest.TestCase):
 
     def test_sync_drops_render_markers(self):
         self.tool("assemble", "--app-state", self.state, code=0)
-        page = next(p for p in self.tool("sync-plan")["pages"] if p["key"] == "pay/op")
+        page = next(p for p in self.tool("sync-plan")["pages"] if p["key"] == "pay")
         text = Path(page["prepared_file"]).read_text()
         self.assertNotIn("docgen:", text)
         self.assertIn("| `WALLET_URL` |", text)

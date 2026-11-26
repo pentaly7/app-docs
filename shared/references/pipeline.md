@@ -1,223 +1,122 @@
 # Pipeline (shared by `generate` and `update`)
 
-You are the orchestrator. You never read application code yourself. You run the helper script, spawn agents, and own `docs/.docgen/state.json`. That keeps your context small enough for big monorepos.
+You are the orchestrator. `pipeline.py` decides everything: which app needs what, every script step between agents, the checks on each agent's output, resume after an interruption, and the final report. You launch the agents it asks for, ask the user its questions, and print its report. That keeps your context and your turns small, and it means no step can be skipped by mistake.
 
 ## Contents
-1. Paths
-2. Preflight
-3. Diagram mode, layout, state machines, humanizer
-4. Per-app pipeline and resume
-5. Agent prompts
-6. Final report
-7. After the report
+1. Running it
+2. Actions
+3. Rules
+4. What the script does (for maintainers)
+5. Jobs and steps
+6. Checks between agents
+7. Workspaces
+8. The workspace file
 
 ---
 
-## 1. Paths
+## 1. Running it
 
-- `SHARED` = the `shared/` folder of this plugin: `<this skill's base directory>/../../shared`. Resolve it to an absolute path once and pass it to every agent.
-- `TOOL` = `python3 <SHARED>/scripts/docs_tool.py`
-- `REPO` = `git rev-parse --show-toplevel` from the current directory.
+`PIPE` = `python3 <this skill's base directory>/../../shared/scripts/pipeline.py`. Run it from the folder the user is in, with no `cd`.
 
-## 2. Preflight
+```
+PIPE start --command <generate|update> [--drawio] [--fsm] [--max-apps N] [--unattended]
+```
 
-1. Not inside a git repo → stop and say so. Provenance and drift both need git.
-2. Run `TOOL meta --repo REPO`. Keep the JSON (`sha`, `short_sha`, `branch`, `dirty`, `dirty_files`, `date`, `user`, `web_url`, `head_pushed`, `windows_drive`).
-3. `dirty` true and someone is there to answer: ask once with AskUserQuestion, listing up to 10 of `dirty_files`: **Commit first** (stop here; they commit and run again) or **Continue** (sections whose own files changed get marked `+ uncommitted changes` by `stamp` and count as stale next time; other sections don't). Unattended: continue.
-   `windows_drive` true (WSL on `/mnt/c`, `/mnt/d`…): warn once that git, search and diagram layout run several times slower there and that file-mode or line-ending noise can show every file as changed; suggest cloning the repo into the Linux home folder.
-4. One-line warnings, then continue:
-   - `web_url` null: "No `origin` remote: code references stay plain text, without GitLab links."
-   - `head_pushed` false: "HEAD isn't pushed yet: the Dev Guide's code links will 404 until you push it."
-5. Make sure `docs/.docgen/.gitignore` exists and contains `.work/`. Run `TOOL migrate --repo REPO` (no LLM, idempotent). It applies the mechanical changes from older plugin versions: the "User Guide" title, the "generated at … run by …" subtitle, GitLab permalinks around code references, and Docmost page keys. These are free, and the new conventions need them, so they aren't part of the opt-in below. Mention the counts it returns in one line if any are non-zero.
-6. If `docs/.docgen/bin/` or `docs/.docgen/gitlab-ci.app-docs.yml` exists (the CI check from 2.9–2.10.0, now removed), say once that both can be deleted, together with their `include:` line in `.gitlab-ci.yml`. Don't delete them yourself.
-7. **Upgrade plan (opt-in).** If `state.json` exists, run `TOOL upgrade-plan --repo REPO`. When `pending` is empty, go on. Otherwise ask once with AskUserQuestion, showing each item's `what`, `units` and `tokens`, and the total:
-   - **Upgrade now**: apply every pending action (section 4).
-   - **Not now**: keep the repo's versions in `state.json`. This run fixes real drift and resumes unfinished apps only. The validator doesn't ask for sections from a newer template. The question comes back on the next run.
-   When nobody is there to answer (a scheduled run), take "Not now" and say so in the report.
-   **Exception: template 3 → 4 (`facts`).** The writers only know template 4: they write rendered blocks and facts entries, never hand-made tables. An app still on template 3 that has drift gets its `facts` stage first, even after "Not now", because updating it otherwise would leave tables half-rendered from a facts file that holds only the changed entries. Say so in the question ("apps with code changes are converted anyway, about 40k tokens each") and in the report. Apps without drift stay on template 3 until the user accepts. The template version is recorded **per app** (`apps/<id>.json → template_version`): the `facts` stage sets the app's to 4, and `state.json → template_version` stays the lowest of all apps.
-8. If the arguments contain `fsm`: set `fsm: true` for **every** app in `state.json` (and every app added in this run). It stays on for later runs without the word. An app that was `done` with `fsm` false gets the "FSM newly enabled" update (section 4).
+- `--drawio`: the arguments contain `drawio`, or the draw.io skill's instructions are already in this conversation (a "Base directory for this skill: …drawio…" header). Otherwise leave it out: diagrams are Mermaid.
+- `--fsm`: the arguments contain `fsm`. It's remembered per app for later runs.
+- `--max-apps N`: the arguments contain a number of apps (`max-apps 4`, `4 apps`). Without it, every app that needs work is started.
+- `--unattended`: nobody can answer (a scheduled run). Every question takes its safe default.
 
-## 3. Diagram mode, layout, state machines, humanizer
+`start` resumes an unfinished run of the same command instead of starting a new one. Every command prints one JSON **action**.
 
-### Diagram mode
+## 2. Actions
 
-The draw.io skill has `disable-model-invocation`, so you can't load it with the Skill tool. Use draw.io mode only when the user asked for it in this run:
-- the arguments contain `drawio`, or
-- the draw.io skill's instructions are already in this conversation (a "Base directory for this skill: …drawio…" header).
+| `action` | What you do |
+|---|---|
+| `ask` | One AskUserQuestion call with every question in `questions` (`header`, `question`, `options` with `label` and `description`). Then `PIPE answer <id>=<value> …` with each chosen option's `value`. |
+| `classify` | For each repo, decide which `candidates` are apps, by `rules`. Then `PIPE apps --json '{"<repo>": [{"path": "…", "id": "…", "kind": "…"}]}'`. |
+| `agents` | Launch every task in `launch` with the Agent tool, all in **one message**: `subagent_type` as given (if the list shows plugin agents as `app-docs:<name>`, use that form), `description` and `prompt` exactly as given, in the background. Launch nothing else. |
+| `wait` | Agents in `running` are still working. Wait for their completion notices. |
+| `stop` | Tell the user the `say` text, and stop. |
+| `done` | Print `say` exactly as it is, and stop. |
 
-Then:
-1. Find the skill folder. Use the base directory if it was shown. Otherwise take the first folder with a `SKILL.md` among `~/.claude/skills/*drawio*`, `REPO/.claude/skills/*drawio*`, `~/.agents/skills/*drawio*`, `~/.claude/plugins/**/skills/*drawio*`.
-2. Check the CLI: `drawio --version`, `draw.io --version`, or `/Applications/draw.io.app/Contents/MacOS/draw.io --version`.
-3. If both checks pass, the mode is `drawio` with `DRAWIO_SKILL=<folder>`. Otherwise the mode is `mermaid`. Tell the user why in one line ("draw.io CLI not found — using Mermaid"), so they don't discover it halfway through the run.
-4. **Layout engine (draw.io mode only).** Diagrams are laid out by the plugin's `<SHARED>/scripts/diagram_layout.py`, which needs Graphviz. `command dot -V < /dev/null` must succeed. If it doesn't, **stop before any agent runs** and say what to install: `brew install graphviz` (macOS), `sudo apt install graphviz` (Debian/Ubuntu), `winget install graphviz` (Windows).
+When an agent's completion notice arrives: `PIPE done --task <id>` (list every task that finished: `--task a --task b`). If an agent ended in an error rather than a summary: `PIPE done --failed <id> --error "<one line>"`. The result is the next action.
 
-Without a draw.io request, the mode is `mermaid`, silently.
+## 3. Rules
 
-### Diagram theme
+- Don't read application code, and don't open the agents' output files. Agents read code in their own context; the script checks their output.
+- Don't run `docs_tool.py` yourself, and don't edit `docs/`, `state.json` or the run file. The script does all of that, in order.
+- Don't pass one agent's summary to another, above all not to the goldfish reviewer: its value is that it starts fresh. You don't need to read the summaries closely either.
+- Wait for every agent. Never stop or cancel one, and never launch a task twice. Taking a long time is normal.
+- Lost track (the conversation was compacted, a command failed halfway)? `PIPE next` prints the current action without changing anything.
+- Don't commit or push. Don't sync: every browser call in this conversation would re-send the whole run. The report ends with the line about syncing in a new conversation.
 
-After an app's last writing step, run `TOOL svg-theme --repo REPO --app <id>`. It applies the light/dark palette to every `.drawio.svg` in the mode stored in `state.json → docmost.diagram_theme` (default `adaptive`, switched to `light` by the first sync if Docmost's toggle doesn't reach images). It's deterministic and costs nothing, so run it every time.
+## 4. What the script does (for maintainers)
 
-### Humanizer
+`start`, for every repo of the run (one repo, or a workspace: §7):
+1. `docs_tool.py meta`; warnings for a missing `origin` remote, an unpushed HEAD, a repo on a Windows drive under WSL.
+2. `docs/.docgen/.gitignore` with `.work/`, then `migrate` (no model: titles, subtitles, code links, Docmost page keys; it drops 2.x Dev Guide page keys).
+3. Outside skills: humanizer-indonesia (always; the plugin's fallback rules when it's missing) and, with `--drawio`, the draw.io skill and CLI (Mermaid when either is missing; a stop when Graphviz is missing). `skill-pin` reports a changed skill.
+4. Planning (§5): new apps to classify, `drift`, `upgrade-plan`, and the jobs of each app.
+5. Questions, asked once for the whole run: uncommitted changes, plugin upgrades (with the token estimate), splitting when a repo passes 10 apps, and apps left mid-run by 2.x. Unattended defaults: continue, not now, not now, stop.
 
-The User Guide is always humanized with the **humanizer-indonesia** skill (see `humanizer.md`). This doesn't depend on the arguments.
+Then `next` advances every app as far as script steps go, queues agent tasks, and launches up to **3 at a time** across all repos, in run order. More at once doesn't use fewer tokens; it only reaches a usage limit sooner, with more work cut off when it does.
 
-1. Find the skill folder: the first folder with a `SKILL.md` among `~/.claude/skills/humanizer-indonesia`, `REPO/.claude/skills/humanizer-indonesia`, `~/.agents/skills/humanizer-indonesia`, `~/.claude/plugins/**/skills/humanizer-indonesia`. If its instructions are already loaded in this conversation, use that base directory.
-2. Found → `HUMANIZER_SKILL=<folder>`.
-3. Not found → `HUMANIZER_SKILL=none`, and warn once: "humanizer-indonesia not installed: using the plugin's fallback rules. Install: `git clone https://github.com/adhiprib/humanizer-indonesia ~/.claude/skills/humanizer-indonesia`". Continue.
+Recovery: a task still `running` when `start` runs again (the session ended, a usage limit hit) is checked on disk. A flow agent whose fragment `state.json` exists finished; flows still missing get a new brief with only those flows. A goldfish whose findings file is complete finished. Other agents are launched again and pick up their own partial work. A failed app resumes at the step that failed.
 
-### Outside skill versions
+## 5. Jobs and steps
 
-humanizer-indonesia and the draw.io skill change on their own schedule, and a new version can change every User Guide's tone or every diagram's look without any change in this plugin. After resolving each one, run `TOOL skill-pin --repo REPO --name humanizer-indonesia --dir <HUMANIZER_SKILL>` (and `--name drawio --dir <DRAWIO_SKILL>` in draw.io mode). When `changed` is true, warn in one line: "humanizer-indonesia changed since the last run (`<old commit>` → `<new commit>`): sections humanized in this run may read differently from older ones. Nothing else is redone." Don't re-humanize on your own; the user decides.
+Each app gets a queue of jobs, stored in `state.json → apps.<id>` (`job`, `step`, `jobs`, `flows_todo`, `flows_done`, `job_started`), so a cut-off run resumes at the same step. `stage` is `pending`, `working`, `failed` or `done`.
 
-## 4. Per-app pipeline and resume
-
-Each app moves through stages, recorded in `state.json → apps.<id>.stage`. Change it only with `TOOL stage --repo REPO --app <id> --stage <stage> [--error "<why>"]` (it writes the real time), after every stage change, so an interrupted run resumes from the right stage. Never edit `state.json` by hand or with inline scripts.
-
-### Fresh docs
-
-| Stage now | Next step | Stage after |
+| Job | When | Steps |
 |---|---|---|
-| `pending` (or `failed` before `app-done`) | app-documenter, mode `app` | `app-done` |
-| `app-done` | `TOOL briefs`, then one **flow-documenter** (mode `flow`) per brief: a brief is a **group** of flows the app agent found to share most of their code | `flows-done` |
-| `flows-done` | `TOOL assemble` (fragments → guides, facts, app state; renders tables) | `drafted` |
-| `drafted` | goldfish-reviewer | `reviewed` |
-| `reviewed` | doc-fixer, then `TOOL render` | `fixed` |
-| `fixed` | humanizer step (below), then svg-theme, validate | `done` |
+| `fresh` | new app | app (`app`) → flows (`flow`) → assemble → review → fix → humanize → finish |
+| `update` | drift, or FSM newly enabled | app (`update`) → flows (stale or new important flows) → assemble → review → fix → humanize → finish |
+| `regenerate` | template upgrade with no step path, split forced, or a 2.x app restarted | as update, with "Template changed: yes" and every important flow |
+| `extend` | accepted upgrade | app (`extend`) → assemble → review → fix → humanize → finish |
+| `facts` | accepted upgrade, or template 3 with drift | app (`facts`) → finish |
+| `redraw` | accepted upgrade, same diagram mode | app and flows (`redraw`) at once → assemble → humanize → finish |
+| `restory` | accepted upgrade | flows (`story`) → assemble → humanize → finish |
+| `rehumanize` | accepted upgrade | humanize (whole User Guide) → finish |
 
-**Flow agents.** `TOOL briefs --repo REPO --app-state docs/.docgen/apps/<id>.json` writes one brief per flow group (`flows[].group`, set by the app agent; few flows over a shared core make one group, so the core is read once). Start one flow-documenter per brief. A flow is finished when its `fragment_dir/state.json` exists; when an agent returns, record its finished flows with `TOOL flow-done --repo REPO --app <id> --flows a,b`. On resume in `app-done`, run `TOOL briefs … --flows <the flows not in flows_done>`. A flow agent that fails: record it in `stage_error`, still assemble the others, and report the flow as missing (the validator flags its placeholder as `flow-not-assembled`).
+Template jobs come first, then update, redraw, restory, rehumanize. After every app of a repo finishes an accepted upgrade, `state.json`'s versions are set to the plugin's.
 
-**Assemble** stops on nothing: it reports `problems` per flow (a fragment without its anchor, say). Report them; the flow's placeholder stays for the next run.
+**Scope.** Before each job the script hashes every section's text. Review and humanizer scope is the sections whose text the job changed (the whole guide for `fresh`, `regenerate` and `rehumanize`). An empty scope skips review, fix and humanizer.
 
-### Updates, upgrades and redraws
+**Reading lists.** The script puts each agent's reading list in its prompt, per mode (`reading_list` in pipeline.py): story and redraw agents don't get the writing templates, Mermaid runs don't get the draw.io spec rules, FSM rules only with FSM on.
 
-| Situation | Steps | Stage after |
-|---|---|---|
-| `done` + drift, or FSM newly enabled | app-documenter `update` (app-level stale sections, new and removed flows) → flow-documenter `flow` for each stale or new important flow (`TOOL briefs --flows a,b`) → assemble → goldfish (changed sections) → doc-fixer → render → humanizer step (changed User Guide sections) → svg-theme → validate | `done` |
-| `redraw` (diagram rules changed) | app-documenter `redraw` and flow-documenter `redraw` per important flow, in parallel → assemble → humanizer step (the story sections) → svg-theme → validate | `done` |
-| `restory` (story rules changed) | flow-documenter `story` per important flow (story-only fragments) → assemble → humanizer step (the story sections) → validate | `done` |
-| `fixed` (humanizer rules changed, code unchanged) | humanizer step on the whole User Guide → validate | `done` |
-| `extend` (accepted upgrade, `extend`) | app-documenter `extend` → goldfish (the new sections) → doc-fixer → render → humanizer step (the new sections) → validate | `done` |
-| `facts` (accepted upgrade, `facts`: template 3 → 4) | app-documenter `facts` → validate. No review: the content doesn't change, and `facts-diff --cells` checks every old table cell and list item made it into the facts | `done` |
+## 6. Checks between agents
 
-Only one agent writes a given file at a time: app-documenter before flow agents, flow agents only into their own fragment folders and specs, the assembler and renderer only between agent steps.
+- **Keep blocks:** `keep-snapshot` before the first agent touches an app in a run; `keep-restore` after every agent that writes the guides, and after assemble. Restored blocks are reported: an agent that drops them needs its prompt checked.
+- **Agent output:** app-documenter must leave a readable app state with flows and both guides (`facts`: template 4; `extend`: the named sections). A flow is done only when its fragment `state.json` exists. The goldfish must leave a findings file. Anything missing fails the app at that step, or, for flows, is reported and left as a placeholder (the validator flags `flow-not-assembled`).
+- **Assemble:** fragments into the guides, facts and app state; `render --refresh-owners` once per run (the owners snapshot), then a facts snapshot (`draft`).
+- **Fix:** `render`, then `facts-diff` against the draft. Fixes may change facts, so this is reported, not blocked ("Fix changed facts").
+- **Humanizer:** `humanize-plan` (nothing to polish → no agent), a facts snapshot, the agent, `render`, then `facts-diff --only op --strict`. Any change gets one more humanizer pass with the `changes` list ("put back exactly these facts"); still changed → validator failure `humanizer-fact-changed`. Never a loop.
+- **Finish:** `svg-theme` (diagrams in `docs/` always adaptive), `stamp`, `validate`. Validator failures don't block; they go in the report with the goldfish counts, fact changes, guide mismatches and restored keep blocks.
+- **Report:** one block per app, failures first, then `usage-spend` since the run started: output, cache reads, cache writes and uncached input per model, and the main session's model.
 
-A `redraw` needs the same diagram mode the diagrams were made in. If the app's sections record `diagram: drawio` but this run is in Mermaid mode, skip the redraw for that app, keep `diagram_version` unchanged, and tell the user to rerun with `drawio`.
+## 7. Workspaces
 
-The upgrade plan's actions map to stages: `regenerate` → update mode with "Template changed: yes" for every app, `extend` → `extend`, `facts` → `facts` (after `extend` when both are pending), `redraw` → `redraw`, `restory` → `restory`, `rehumanize` → `fixed`. Set `template_version` to current after the last app finishes its template steps, so an interrupted upgrade resumes as an upgrade. If the user said "Not now", don't set any of these stages and don't touch the versions. Several can be pending at once: template steps first, then `redraw`, then `restory`, then the humanizer step. After every app finishes, set `diagram_version` / `story_version` / `humanizer_version` to the current values from `TOOL meta`.
+Run from a folder that isn't inside a git repo, and every git repo one or two folders below it is part of the run (`parent/svc-a/`, `parent/group/svc-b/`). Inside a repo the search stops, so its nested clones and submodules aren't separate repos. Dependency folders (`vendor/`, `node_modules/`, …) and hidden folders are skipped. Run from inside a repo, it's a single-repo run, even when that repo is part of a workspace.
 
-### Every app, every run
+Repos run **callees first**: a service another one calls is documented before it, so its doc paths exist when the caller's agent writes links. The calls are guessed from config files (other repos' names in base URLs, env keys like `WALLET_SVC_URL`, compose service names). A wrong guess only costs some links on the first pass. Agents get every other app as a link target: a relative path inside the repo, a GitLab link (`<repo>/-/blob/HEAD/<path>`) for another repo (conventions §12).
 
-- **Before the first agent** touches an app: `TOOL keep-snapshot --repo REPO --app-state <state> --out docs/.docgen/.work/keep-<id>.json`. People write `<!-- app-docs:keep -->` blocks into the guides (conventions §8).
-- **After every writing step** (each agent, and assemble): `TOOL keep-restore --repo REPO --app-state <state> --before docs/.docgen/.work/keep-<id>.json`. It puts back any keep block an agent dropped. Report restored blocks: an agent that drops them needs its prompt checked.
-- **After assemble**, render once with `--refresh-owners`: `TOOL render --repo REPO --app-state <state> --refresh-owners`. That takes this run's owners snapshot; every other render reuses it, so the owners table doesn't change between runs on its own.
-- **Before validate**: `TOOL stamp --repo REPO --app-state <state>`. It sets each section's dirty flag from its own files (and the subtitle mark to match), and records each section's file contents, so drift still works after a squash merge or rebase. Agents never set `dirty`.
+`--max-apps N` starts at most N apps that need work, in run order; apps already in progress count first. The rest are listed as not started.
 
-### Humanizer step
+## 8. The workspace file
 
-1. `TOOL humanize-plan --repo REPO --app-state <state> --skill <HUMANIZER_SKILL> [--scope <op: keys>]`. Scope = the User Guide sections written or changed in this run (all of them on a fresh run). It lists every prose paragraph and every Indonesian table string in scope. **Both counts 0 → skip the agent.**
-2. `TOOL facts-snapshot … --out docs/.docgen/.work/facts-<id>-prehuman.json`.
-3. operator-humanizer with the plan.
-4. `TOOL render --repo REPO --app-state <state>` (the humanizer changed table text in the facts file), then `TOOL facts-diff … --before …-prehuman.json --only op --strict`. It covers the rendered tables too. Any change is a failure: run operator-humanizer **once more** with the `changes` list ("put back exactly these facts"), and diff again. Still failing → record a validator failure `humanizer-fact-changed` and keep the text. Never loop.
+`<parent>/.app-docs-workspace.json`, not committed anywhere (the parent folder isn't a repo):
 
-### Fact checks around the fixer
-
-After `assemble` (or the first writing step of an update), `TOOL facts-snapshot … --out …-draft.json`. After `doc-fixer` and render, `TOOL facts-diff … --before …-draft.json`. Fixes may change facts, so this is **report only**: list lost or added facts under "Fix changed facts". The validator also compares the two guides' facts and warns on mismatches; report them, don't fix them.
-
-### Waiting, concurrency, failures
-
-Waiting: an agent that takes a long time is normal. **Wait for every agent to finish.** Never stop or cancel one, and never start a second agent on the same files. If you run a shell command yourself, use `command <tool> … < /dev/null` with explicit paths.
-
-Concurrency: at most **5 agents running at once**, across all apps (several Agent calls in one message). Fill free slots with the next flow agents of any app, then with the next app's stage. Stages within one app run in order. If an agent fails, record `stage: "failed"` and `stage_error` (for a flow agent: as above), move on, and report it. Never let one broken app block the rest.
-
-Validation (no LLM) after svg-theme: `TOOL validate --repo REPO --app-state docs/.docgen/apps/<id>.json`. Failures **don't block writing**. Collect them for the report.
-
-**Token recording.** At the start of the run, set `RUN` to the current time (`date -u +%Y-%m-%dT%H:%M:%SZ`), the same value for the whole run. Record an agent only **when its completion notice arrives** (never at launch): the notice carries `total_tokens` and `duration_ms`. That figure is roughly the agent's **context size at the end**, not what it spent, so label it "final context" wherever it's shown. Record it right away:
-`TOOL usage-record --repo REPO --run RUN --app <id> --stage <stage it ran> --agent <agent name> --tokens <total_tokens> --ms <duration_ms>`
-For flow agents, use `--stage flow:<group>`. If the completion doesn't show a token count, leave `--tokens` out. Your own (orchestrator) tokens aren't in it.
-
-Cost control: every writer runs on Sonnet and goldfish-reviewer on Opus, as set in their agent files. Goldfish runs once per app per run; fixes are applied without a second review; the validator is the safety net.
-
-## 5. Agent prompts
-
-Fill in the `<…>` values. Agents start with no context, so everything they need goes in the prompt. Every prompt starts with this header:
-
-```
-Repo root: <REPO>
-Shared folder: <SHARED>
-Meta: <meta JSON>
-Diagram mode: <drawio|mermaid>   Draw.io skill: <path or "none">
+```json
+{
+  "repos": [{"path": "db-service"}, {"path": "group/wallet"}, {"path": "shop"}],
+  "calls": {"shop": ["wallet"], "wallet": ["db-service"], "db-service": []},
+  "calls_source": "guessed",
+  "docmost": {"root_url": "…", "method": "clipboard-markdown", "image_method": "file-upload", "diagram_theme": "adaptive", "list_numbers": "native", "image_reuse": "ok"}
+}
 ```
 
-**app-documenter**
-```
-Mode: <app | update | extend | facts | redraw>
-App: id=<id> root=<root> language=<lang> kind=<kind-guess>
-FSM: <on|off>
-Split: <"forced (repo has >10 apps)" | "decide by conventions §10">
-Other apps in this repo (for cross-app links): <id → docs path, or "not documented yet">
-Repo template version: <state.template_version>
-update only:  Drift: <TOOL drift JSON for this app>   Template changed: <yes|no>   FSM newly enabled: <yes|no>
-extend only:  Add these sections and nothing else: <upgrade-plan sections>
-Write: per your mode. Return a summary of 10 lines or fewer.
-```
-
-**flow-documenter**
-```
-Mode: <flow | story | redraw>
-Brief: docs/.docgen/.work/briefs/<id>/<flow-id>.json
-```
-
-**goldfish-reviewer**
-```
-App state: docs/.docgen/apps/<id>.json
-Review scope: <"all sections" | list of section keys changed in this run>
-Write findings to: docs/.docgen/.work/review-<id>.json
-```
-Don't pass any writer's summary or reasoning to the goldfish. Its value is that it starts fresh.
-
-**doc-fixer**
-```
-App state: docs/.docgen/apps/<id>.json
-Findings: docs/.docgen/.work/review-<id>.json
-```
-
-**operator-humanizer**
-```
-App state: docs/.docgen/apps/<id>.json
-Plan: docs/.docgen/.work/humanize-<id>-plan.json
-humanizer-indonesia skill: <HUMANIZER_SKILL path or "none">
-Facts to restore: <only on the second pass: the facts-diff changes list>
-```
-The humanizer runs last, after the goldfish and the fixer, so nothing undoes its tone. The validator is the only check after it.
-
-## 6. Final report
-
-Keep it short. Run `TOOL usage-report --repo REPO --run RUN` (final context per agent) and `TOOL usage-spend --repo REPO --since RUN` (real spend: input, output, cache write and cache read tokens from Claude Code's session transcripts, main session and every subagent) first. If `usage-spend` finds no transcripts, say so and show only final context. One block per app, failures first:
-
-```
-payment-api  ✅ done   docs/payment-api/  (single, 23 flows, 9 full)
-  Validator: 2 failures
-    - dev:app-flow/refund: code ref services/payment-api/x.go:300 beyond end of file (210 lines)
-  Goldfish: 11 findings → 10 fixed, 1 rejected (reason)
-  Fix changed facts: dev:app-flow/refund lost `30s`, added `60s`
-  Guides disagree: app-flow/create-payment: User Guide says `PAYMENT_TIMEOUT_MS`, Dev Guide doesn't
-  Code links: commit a1b2c3d not pushed (links 404 until pushed)
-  Final context: app 95k · flows 2 × 60k · review 70k · fix 20k · humanize 25k
-  Diagrams: 9 flows × (flowchart + sequence), 6 sub-flows, structure, startup, data-flow · layout graphviz · theme adaptive
-  State machines: payment-status (5 states, 9 transitions, 1 inferred name), item-state
-  Marks: 3 unverified · 1 contradiction · 2 security findings
-  Fill manually: deployment, log location
-order-web    ❌ failed at drafted: <stage_error>
-```
-
-After the app blocks, the run's real spend from `usage-spend` in one line: output tokens, cache reads, cache writes and uncached input, per model ("Spend: Sonnet 310k out · 41M cache read · 2.1M cache write · 180k in; Opus 22k out · 3.9M cache read …"). Output and cache reads are what drive cost and usage limits. Compare runs on these, never on final context, which grows with the number of agents.
-
-Remind the user that nothing was committed. They review the diff and commit.
-
-## 7. After the report
-
-If at least one app changed in this run:
-
-Don't sync in this conversation: every browser call would re-send this run's whole history. End with one line: "To publish to Docmost, run `/app-docs:sync` in a **new** conversation." The user decides when.
-
-In a scheduled run, ask nothing: write the report and stop.
+- `repos`: in run order, rewritten on every run.
+- `calls`: guessed again on every run. To fix a wrong guess, edit it and set `"calls_source": "manual"`; the script then keeps it.
+- `docmost`: the sync calibration, shared by every repo synced to that Docmost (sync skill). Each repo's `state.json` keeps its own copy and its own page URLs.
+- The run in progress is kept beside it in `.app-docs-run.json`; for a single repo, in `docs/.docgen/.work/run.json`.

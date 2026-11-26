@@ -1,0 +1,17 @@
+schema_version: "1.1"
+name: workspace
+expected_outcome: |
+  Run from a parent folder holding three service repos (db-service, group/wallet, shop) plus a nested clone
+  inside shop, a vendored repo and a repo three levels down, generate documents exactly the three services in
+  one run, callees first (db-service, then wallet, then shop), with at most 3 agents at a time and every
+  question asked once for the whole run. The workspace file records the repos in that order and the guessed
+  calls. Each service gets both guides in its own repo's docs/. Where a service calls another, its guides link
+  to the other service's guide of the same kind with a GitLab link, never a relative path out of the repo.
+  The orchestrator only runs pipeline.py, launches the agents it lists and prints its report.
+context:
+  scaffold_script: place-files.sh
+---
+tags: [app-docs, workspace]
+max_turns: 300
+timeout_seconds: 7200
+allowed_tools: [Read, Glob, Grep, Skill, Write, Edit, Bash, Agent, AskUserQuestion]
