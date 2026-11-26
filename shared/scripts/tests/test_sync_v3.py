@@ -74,7 +74,14 @@ class Workspace(unittest.TestCase):
         self.assertEqual({Path(r["repo"]).name for r in out["repos"]}, {"shop", "wallet"})
         self.assertEqual(out["to_sync"], 2)
         self.assertFalse(out["calibrated"])
-        self.assertEqual(self.tool(self.shop, "sync-plan", "--app", "other")["pages"], [])
+        order = [Path(r["repo"]).name for r in out["repos"]]
+        self.assertEqual([Path(out["next"]).name] + [Path(r).name for r in out["after"]], order, "one repo per conversation, in run order")
+        first = Path(out["next"])
+        self.tool(first, "sync-record", "--key", "pay", "--url", "https://docmost.example.com/p/1",
+                  "--content-hash", self.tool(first, "sync-plan")["pages"][0]["content_hash"])
+        out = json.loads(subprocess.run([sys.executable, str(pipeline), "targets", "--root", str(self.root)],
+                                        capture_output=True, text=True).stdout)
+        self.assertEqual((Path(out["next"]).name, out["after"]), (order[1], []))
 
 
 class SplitTree(unittest.TestCase):

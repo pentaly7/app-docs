@@ -118,5 +118,5 @@ Repos run **callees first**: a service another one calls is documented before it
 
 - `repos`: in run order, rewritten on every run.
 - `calls`: guessed again on every run. To fix a wrong guess, edit it and set `"calls_source": "manual"`; the script then keeps it.
-- `docmost`: the sync calibration, shared by every repo synced to that Docmost (sync skill). Each repo's `state.json` keeps its own copy and its own page URLs.
+- `docmost`: the sync calibration, shared by every repo synced to that Docmost, so only the first repo's sync calibrates (sync skill: one repo per conversation, in `repos` order). Each repo's `state.json` keeps its own copy and its own page URLs.
 - The run in progress is kept beside it in `.app-docs-run.json`; for a single repo, in `docs/.docgen/.work/run.json`.

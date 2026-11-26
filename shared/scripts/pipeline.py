@@ -1268,7 +1268,8 @@ def cmd_next(args):
 def cmd_targets(args):
     """What a sync would do, per repo and app, without page contents: repos in run order (callees first, so
     most cross-service links resolve on the first pass), pages to create or update, links still waiting for
-    their target page, orphans, and whether Docmost is calibrated yet."""
+    their target page, orphans, and whether Docmost is calibrated yet. `next` is the one repo to sync in this
+    conversation: every browser call re-sends the conversation, so each repo gets a fresh one."""
     kind, repos = discover(args.root)
     root = Path(args.root).resolve() if kind == "workspace" else repos[0]
     if kind == "workspace":
@@ -1299,8 +1300,9 @@ def cmd_targets(args):
             entry["links_pending"] += len(page["links_pending"])
         out.append({"repo": str(repo), "apps": apps, "orphans": plan["orphans"],
                     "not_done": sorted(a for a, v in load_state(repo).get("apps", {}).items() if v.get("stage") != "done")})
+    work = [r["repo"] for r in out if "apps" in r and (r["orphans"] or any(a["to_sync"] for a in r["apps"].values()))]
     print(json.dumps({"kind": kind, "root": str(root), "root_url": root_url, "calibrated": calibrated,
-                      "checks": sorted(checks) or ["none"], "repos": out,
+                      "checks": sorted(checks) or ["none"], "next": work[0] if work else None, "after": work[1:], "repos": out,
                       "to_sync": sum(a["to_sync"] for r in out for a in r.get("apps", {}).values())}, ensure_ascii=False, indent=1))
 
 

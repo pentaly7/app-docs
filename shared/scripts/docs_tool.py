@@ -2502,8 +2502,6 @@ def cmd_sync_plan(args):
         pages.append(entry)
 
     for key, parent, title, source in _op_pages(repo, state):
-        if getattr(args, "app", None) and key.split("/", 1)[0] != args.app:
-            continue
         add(key, parent, title, source)
     keys = [p["key"] for p in pages]
     duplicates = sorted({k for k in keys if keys.count(k) > 1})
@@ -2575,8 +2573,6 @@ def main():
     for name in ("meta", "detect", "drift", "sync-plan", "migrate", "readme-plan", "upgrade-plan"):
         p = sub.add_parser(name)
         p.add_argument("--repo", default=".")
-        if name == "sync-plan":
-            p.add_argument("--app", help="only this app's pages (one sync agent per app)")
     p = sub.add_parser("author")
     p.add_argument("--repo", default=".")
     p.add_argument("file")

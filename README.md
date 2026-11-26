@@ -13,7 +13,7 @@ Docs are written to `/docs`, with every table and list rendered by script from o
 |---|---|
 | `/app-docs:generate [drawio] [fsm] [max-apps N]` | Main command. Fresh docs for new apps, drift update for documented ones, plugin upgrades only when you accept them (with a token estimate), resume after an interrupted run. Run it in a repo, or in a folder of repos (workspace). |
 | `/app-docs:update [drawio] [fsm] [max-apps N]` | Drift report, then fixes only the affected sections of already-documented apps. |
-| `/app-docs:sync [docmost-url]` | One-way sync of the User Guides to Docmost through your logged-in Chrome, one sync agent per app. The URL is saved after the first run. |
+| `/app-docs:sync [docmost-url]` | One-way sync of one repo's User Guides to Docmost through your logged-in Chrome. In a workspace folder it syncs the next repo that needs it; each repo gets a new conversation. The URL is saved after the first run. |
 | `/app-docs:readme` | Rewrites each app's `README.md` (and a monorepo root index) by script, with no model, as a condensed copy of its Dev Guide: what it is, tech stack, quick start, configuration, structure diagram, flows, doc links, owners (CODEOWNERS, else recent committers), the commit of its oldest section. Asks first if the Dev Guide is behind `HEAD`; stops if an app has no Dev Guide yet. |
 
 Skills this plugin uses:
@@ -50,7 +50,7 @@ claude plugin install app-docs@app-docs
 | Who | Model | Why |
 |---|---|---|
 | Your session (the orchestrator) for generate, update and sync | **Sonnet**, set by the skills (`model: sonnet`) | It runs `pipeline.py`, launches agents and prints the report. Opus adds cost and nothing else here. |
-| app-documenter, flow-documenter, doc-fixer, operator-humanizer, docmost-syncer | Sonnet | The writing and the browser work. |
+| app-documenter, flow-documenter, doc-fixer, operator-humanizer | Sonnet | The writing. |
 | goldfish-reviewer | **Opus** | The quality check: a fresh reader comparing the docs with the code. Keep it on Opus. |
 
 The skill setting switches the model for the run's turn. If the final report's "Main session model" line says Opus anyway, run `/model sonnet` before the next run.
@@ -70,6 +70,7 @@ Run generate, update or sync from a folder that isn't a repo, and every git repo
 - **Callees first:** the plugin guesses which service calls which from config files (base URL hosts, keys like `WALLET_URL`) and documents and syncs callees before their callers, so cross-service links work on the first pass. The guess is in `.app-docs-workspace.json` in the parent folder; if it's wrong, edit `calls` and set `"calls_source": "manual"`.
 - **Links between services:** in the markdown, a GitLab link to the other repo's guide (it works in GitLab). Sync turns a User Guide link into the other service's Docmost page once that page exists, and plain text until then.
 - **Questions once:** uncommitted changes, upgrades and the like are asked once for the whole run, not per repo.
+- **Sync one repo per conversation:** every browser call re-sends the whole conversation, so each repo gets a new one. Run `/app-docs:sync` from the parent folder and it picks the next repo (callees first); at the end it tells you which repo is next. A link that waits for a later repo resolves when its repo is synced again.
 - **One calibration:** the first sync calibrates Docmost and the workspace file keeps it for every repo. The workspace file and the run file beside it (`.app-docs-run.json`) aren't committed anywhere.
 - A colleague who runs the plugin in their single repo gets a normal single-repo run; links already written stay as they are.
 
@@ -140,7 +141,7 @@ Nothing in your docs is redone. What changes:
 - **The orchestrator runs on Sonnet** and only follows `pipeline.py`. The script does every non-model step, so none can be skipped.
 - **Docmost gets the User Guide only**, as the app's own page (no "User Guide" sub-page, no "Dev Guide" page). `migrate` drops Dev Guide page keys from `state.json` without touching Docmost. If you had synced 2.x pages, the old User Guide sub-page shows up as an orphan on the next sync, to archive or delete.
 - **Diagrams in `docs/` stay adaptive** (light and dark), because GitLab shows them. When Docmost's theme toggle doesn't reach images, sync uploads light copies instead of changing your files.
-- **Workspaces**, `max-apps N`, 3 agents at a time, questions once per run, one sync agent per app.
+- **Workspaces**, `max-apps N`, 3 agents at a time, questions once per run. Sync covers one repo per conversation: from the parent folder it picks the next repo, callees first, and tells you when to start a new conversation for the one after.
 - **Removed:** `usage-record` and `usage-report` (the local token log). The report shows real spend from `usage-spend`.
 
 From 2.10.2 (to 2.10.3): nothing to redo. The humanizer now polishes every paragraph and the table text of each User Guide section a run writes or changes (before: only flagged paragraphs, never tables). Sections that don't change aren't re-polished; to polish a whole existing guide once, bump `HUMANIZER_VERSION` and accept the upgrade.
@@ -184,7 +185,6 @@ Template version 2 changes diagrams, the operator guide's voice and its sections
 ## Known limits
 
 - **Docmost page titles:** each app's page is titled with the app's name; split sub-pages drop it. The markdown files in GitLab keep their full H1.
-- **Docmost sync is UI automation.** Page text goes through the OS clipboard and a real paste, diagrams through Docmost's image upload. The first sync calibrates both and stops if your Docmost version doesn't support them; a page that fails later triggers one recalibration. A Docmost UI upgrade can still break it. Sync agents run one at a time because they share the clipboard.
-- **Sync agents and Chrome:** subagents are documented to inherit the Claude in Chrome tools. If they can't reach Chrome in your setup, sync says so and runs every app in its own conversation instead.
+- **Docmost sync is UI automation.** Page text goes through the OS clipboard and a real paste, diagrams through Docmost's image upload. The first sync calibrates both and stops if your Docmost version doesn't support them; a page that fails later triggers one recalibration. A Docmost UI upgrade can still break it.
 - **Docmost inline comments don't survive a sync.** Each sync replaces the page body, so comments attached to text in it are lost or detached. URLs, page history and the page tree are kept. Keep notes in separate pages, or propose changes as a merge request on the markdown.
 - **Call order is a guess** from config files. A wrong guess only delays some cross-service links to the next sync; fix it in the workspace file.
